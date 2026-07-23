@@ -8,6 +8,9 @@ Ferramenta de diagnóstico OBD2 em Python para veículos 2015+ usando adaptadore
 PIDs ao vivo, identifica o veículo pelo VIN, guarda o histórico em SQLite e
 oferece uma interface web local com acompanhamento do scan em tempo real.
 
+Não tem um adaptador em mãos? `autodiag scan --demo` executa o fluxo completo
+com um veículo simulado — sem hardware nenhum.
+
 ## O que ela faz hoje
 
 - **Leitura de DTCs** (modo 03) via ELM327, com decodificação dos códigos
@@ -23,8 +26,12 @@ oferece uma interface web local com acompanhamento do scan em tempo real.
 - **Heurística de urgência** (`critico` / `atencao` / `informativo`) baseada
   nos DTCs encontrados e em limites de PIDs (superaquecimento, fuel trim alto,
   MAF baixo).
-- **Análise opcional com IA** (Claude, via SDK da Anthropic) quando a variável
-  `ANTHROPIC_API_KEY` está definida — pode ser desativada com `--no-ai`.
+- **Modo demo** (`--demo` na CLI e checkbox na web): adaptador simulado com um
+  cenário realista de mistura pobre + falha de ignição (P0171/P0300), para
+  testar a ferramenta inteira sem hardware.
+- **Análise opcional com IA** (Claude Opus 4.8 via SDK da Anthropic, com
+  streaming e thinking adaptativo) quando `ANTHROPIC_API_KEY` está definida —
+  pode ser desativada com `--no-ai`.
 - **Histórico local** em SQLite (`~/.autodiag/history.db`) com listagem e
   resumo estatístico (total, críticos, DTCs mais frequentes).
 - **Interface web** (FastAPI + uvicorn) com página única e streaming do scan
@@ -39,7 +46,9 @@ src/autodiag/
 │   ├── dtc.py          # Base local de DTCs (DTCInfo, lookup, severidade)
 │   └── vehicle.py      # Decodificação de VIN (local + API NHTSA)
 ├── elm327/
-│   └── reader.py       # Comunicação ELM327 (serial/Wi-Fi), decodificação de DTCs e PIDs
+│   ├── __init__.py     # Protocolo OBDReader + fábrica create_reader (real/simulado)
+│   ├── reader.py       # Comunicação ELM327 (serial/Wi-Fi), decodificação de DTCs e PIDs
+│   └── sim.py          # Adaptador simulado do modo demo
 ├── agents/
 │   └── diagnostic.py   # Análise assistida por IA (Anthropic)
 ├── db/
@@ -86,6 +95,9 @@ uv run autodiag clear
 Sem hardware, ainda funcionam:
 
 ```bash
+# Fluxo de diagnóstico completo com veículo simulado (P0171 + P0300)
+uv run autodiag scan --demo
+
 # Consultar um código na base local
 uv run autodiag dtc P0171
 
@@ -97,8 +109,11 @@ uv run autodiag summary
 uv run autodiag serve --open
 ```
 
-Observação: a detecção automática de porta procura dispositivos `/dev/cu.*`
-(macOS). Em Linux/Windows, informe a porta com `--port` (ex.: `COM3`).
+A detecção automática de porta funciona em Windows, Linux e macOS: as portas
+seriais do sistema são enumeradas via pyserial e filtradas por identificadores
+típicos de adaptadores ELM327 (chipsets CH340/CP210x/FTDI/PL2303 e nomes
+"OBDII"). Se o seu adaptador não for reconhecido, informe a porta com
+`--port` (ex.: `COM3` no Windows, `/dev/ttyUSB0` no Linux).
 
 ## Testes
 
@@ -111,8 +126,16 @@ uv sync
 uv run pytest
 ```
 
-A suíte roda em CI (GitHub Actions, Ubuntu, Python 3.12) a cada push e pull
-request.
+Qualidade de código é verificada com [ruff](https://docs.astral.sh/ruff/)
+(lint) e [mypy](https://mypy-lang.org/) (tipos):
+
+```bash
+uv run ruff check .
+uv run mypy
+```
+
+Testes, lint e type-check rodam em CI (GitHub Actions, Ubuntu, Python 3.12)
+a cada push e pull request.
 
 ## Licença
 
