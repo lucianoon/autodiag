@@ -98,9 +98,15 @@
                   <input type="text" class="form-control form-control-sm" id="scan-wifi"
                     placeholder="ex: 192.168.0.10">
                 </div>
-                <div class="col-md-2 d-flex align-items-center gap-2 pt-3">
-                  <input type="checkbox" class="form-check-input mt-0" id="scan-no-ai">
-                  <label class="form-check-label small text-muted" for="scan-no-ai">Sem análise IA</label>
+                <div class="col-md-2 d-flex flex-column justify-content-center pt-3">
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="checkbox" class="form-check-input mt-0" id="scan-no-ai">
+                    <label class="form-check-label small text-muted" for="scan-no-ai">Sem análise IA</label>
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="checkbox" class="form-check-input mt-0" id="scan-demo">
+                    <label class="form-check-label small text-muted" for="scan-demo">Modo demo</label>
+                  </div>
                 </div>
                 <div class="col-md-3">
                   <button class="btn btn-primary btn-sm w-100" id="scan-btn" onclick="startScan()">
@@ -321,12 +327,14 @@ function startScan() {
   const port  = document.getElementById('scan-port').value.trim();
   const wifi  = document.getElementById('scan-wifi').value.trim();
   const noAi  = document.getElementById('scan-no-ai').checked;
+  const demo  = document.getElementById('scan-demo').checked;
   const btn   = document.getElementById('scan-btn');
 
   const params = new URLSearchParams();
   if (port)  params.set('port', port);
   if (wifi)  params.set('wifi', wifi);
   if (noAi)  params.set('no_ai', 'true');
+  if (demo)  params.set('demo', 'true');
 
   btn.disabled = true;
   btn.textContent = '⏳ Escaneando...';

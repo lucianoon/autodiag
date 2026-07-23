@@ -6,6 +6,7 @@ Uso:
   autodiag scan --port /dev/cu.x # porta específica
   autodiag scan --wifi 192.168.0.10  # adaptador Wi-Fi
   autodiag scan --no-ai          # sem análise Claude
+  autodiag scan --demo           # sem hardware: veículo simulado (P0171 + P0300)
   autodiag history               # últimos 10 diagnósticos
   autodiag history --limit 20
   autodiag summary               # estatísticas gerais
@@ -26,7 +27,8 @@ load_dotenv(Path.home() / ".autodiag" / ".env")
 load_dotenv(".env")
 
 from autodiag.core.vehicle import VehicleProfile, decode_vin_nhtsa, decode_vin_local
-from autodiag.elm327.reader import ELM327Reader, LivePIDs, DTCRecord
+from autodiag.elm327 import create_reader
+from autodiag.elm327.reader import LivePIDs, DTCRecord
 from autodiag.db.history import History, Session
 from autodiag import ui
 
@@ -51,10 +53,14 @@ def _infer_urgency(dtcs: list[DTCRecord], pids: LivePIDs) -> str:
 
 
 async def cmd_scan(args):
-    ui.display.section("Conectando ao adaptador ELM327")
+    demo = getattr(args, "demo", False)
+    if demo:
+        ui.display.section("Modo demo — adaptador ELM327 simulado")
+    else:
+        ui.display.section("Conectando ao adaptador ELM327")
 
     wifi_host = args.wifi if hasattr(args, "wifi") else None
-    reader = ELM327Reader(port=getattr(args, "port", None), wifi_host=wifi_host)
+    reader = create_reader(port=getattr(args, "port", None), wifi_host=wifi_host, demo=demo)
 
     try:
         ok = reader.connect()
@@ -74,7 +80,9 @@ async def cmd_scan(args):
     ui.display.ok(f"VIN: {vin}" if vin else "VIN não disponível")
 
     vehicle: VehicleProfile
-    if vin and len(vin) == 17:
+    if demo:
+        vehicle = decode_vin_local(vin)  # VIN sintético: não consultar a NHTSA
+    elif vin and len(vin) == 17:
         try:
             vehicle = await decode_vin_nhtsa(vin)
             ui.display.ok(f"Veículo: {vehicle.label}")
@@ -159,7 +167,7 @@ def cmd_dtc(args):
 
 def cmd_clear(args):
     ui.display.section("Apagando DTCs")
-    reader = ELM327Reader(port=getattr(args, "port", None))
+    reader = create_reader(port=getattr(args, "port", None), demo=getattr(args, "demo", False))
     try:
         reader.connect()
     except ConnectionError as e:
@@ -189,6 +197,8 @@ def main():
     p_scan.add_argument("--port", metavar="PORTA", help="Ex: /dev/cu.usbserial-1410")
     p_scan.add_argument("--wifi", metavar="HOST", help="IP do adaptador Wi-Fi (padrão: 192.168.0.10)")
     p_scan.add_argument("--no-ai", action="store_true", help="Pular análise com Claude")
+    p_scan.add_argument("--demo", action="store_true",
+                        help="Usar adaptador simulado (roda sem hardware OBD2)")
 
     # history
     p_hist = sub.add_parser("history", help="Mostrar histórico de diagnósticos")
@@ -204,6 +214,8 @@ def main():
     # clear
     p_clear = sub.add_parser("clear", help="Apagar DTCs do veículo")
     p_clear.add_argument("--port", metavar="PORTA")
+    p_clear.add_argument("--demo", action="store_true",
+                        help="Usar adaptador simulado (roda sem hardware OBD2)")
 
     # serve
     p_serve = sub.add_parser("serve", help="Iniciar interface web (http://localhost:8000)")

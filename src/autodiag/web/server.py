@@ -14,7 +14,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from autodiag.core.dtc import lookup, DTC_DATABASE
 from autodiag.core.vehicle import decode_vin_local, VehicleProfile
 from autodiag.db.history import History, Session
-from autodiag.elm327.reader import ELM327Reader, DTCRecord, LivePIDs
+from autodiag.elm327 import create_reader
+from autodiag.elm327.reader import DTCRecord, LivePIDs
 
 app = FastAPI(title="AutoDiag")
 
@@ -85,6 +86,7 @@ async def api_scan_stream(
     port: str = Query(None),
     wifi: str = Query(None),
     no_ai: bool = Query(False),
+    demo: bool = Query(False),
 ):
     loop = asyncio.get_event_loop()
     q: asyncio.Queue = asyncio.Queue()
@@ -94,8 +96,11 @@ async def api_scan_stream(
 
     def run():
         try:
-            send({"type": "status", "message": "Conectando ao adaptador ELM327..."})
-            reader = ELM327Reader(port=port, wifi_host=wifi)
+            if demo:
+                send({"type": "status", "message": "Modo demo — adaptador ELM327 simulado"})
+            else:
+                send({"type": "status", "message": "Conectando ao adaptador ELM327..."})
+            reader = create_reader(port=port, wifi_host=wifi, demo=demo)
             connected = reader.connect()
             if not connected:
                 send({"type": "error", "message": "Falha ao inicializar ELM327. Verifique a conexão."})
@@ -106,7 +111,7 @@ async def api_scan_stream(
             send({"type": "status", "message": "Lendo VIN..."})
             vin = reader.get_vin()
             vehicle = decode_vin_local(vin) if vin else VehicleProfile()
-            if vin and len(vin) == 17:
+            if vin and len(vin) == 17 and not demo:  # VIN sintético: não consultar a NHTSA
                 try:
                     import httpx as _httpx
                     url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{vin}?format=json"

@@ -1,0 +1,38 @@
+"""Camada de acesso ao adaptador OBD2 — real (ELM327) ou simulado (demo)."""
+from typing import Protocol
+
+from autodiag.elm327.reader import DTCRecord, ELM327Error, ELM327Reader, LivePIDs
+from autodiag.elm327.sim import SimulatedELM327
+
+
+class OBDReader(Protocol):
+    """Interface comum entre o adaptador real e o simulado."""
+
+    def connect(self) -> bool: ...
+    def disconnect(self) -> None: ...
+    def get_vin(self) -> str: ...
+    def get_dtcs(self) -> list[DTCRecord]: ...
+    def clear_dtcs(self) -> bool: ...
+    def get_live_pids(self) -> LivePIDs: ...
+
+
+def create_reader(
+    port: str | None = None,
+    wifi_host: str | None = None,
+    demo: bool = False,
+) -> OBDReader:
+    """Retorna o adaptador simulado quando ``demo=True``; caso contrário, o real."""
+    if demo:
+        return SimulatedELM327()
+    return ELM327Reader(port=port, wifi_host=wifi_host)
+
+
+__all__ = [
+    "DTCRecord",
+    "ELM327Error",
+    "ELM327Reader",
+    "LivePIDs",
+    "OBDReader",
+    "SimulatedELM327",
+    "create_reader",
+]
