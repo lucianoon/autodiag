@@ -16,7 +16,6 @@ Uso:
 
 import argparse
 import asyncio
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -108,14 +107,16 @@ async def cmd_scan(args):
     # IA
     diagnosis_text = ""
     if not getattr(args, "no_ai", False):
-        if not os.environ.get("ANTHROPIC_API_KEY"):
+        from autodiag.agents.diagnostic import AIUnavailableError, analyze, is_configured
+        if not is_configured():
             ui.display.warn("ANTHROPIC_API_KEY não definida — análise IA ignorada.")
         else:
             ui.display.section("Análise com IA (Claude)")
             try:
-                from autodiag.agents.diagnostic import analyze
                 diagnosis_text = analyze(vehicle, dtcs, pids)
                 ui.display.analysis_panel(diagnosis_text, urgency)
+            except AIUnavailableError as e:
+                ui.display.warn(str(e))
             except Exception as e:
                 ui.display.warn(f"Erro na análise IA: {e}")
 

@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -149,14 +148,15 @@ async def api_scan_stream(
 
             # IA
             analysis = ""
-            if not no_ai and os.environ.get("ANTHROPIC_API_KEY"):
-                send({"type": "status", "message": "Analisando com Claude..."})
-                try:
-                    from autodiag.agents.diagnostic import analyze
-                    analysis = analyze(vehicle, dtcs, pids)
-                    send({"type": "analysis", "text": analysis})
-                except Exception as e:
-                    send({"type": "warn", "message": f"Erro na análise IA: {e}"})
+            if not no_ai:
+                from autodiag.agents.diagnostic import analyze, is_configured
+                if is_configured():
+                    send({"type": "status", "message": "Analisando com Claude..."})
+                    try:
+                        analysis = analyze(vehicle, dtcs, pids)
+                        send({"type": "analysis", "text": analysis})
+                    except Exception as e:
+                        send({"type": "warn", "message": f"Erro na análise IA: {e}"})
 
             # Salvar
             sid = History().save(Session(
