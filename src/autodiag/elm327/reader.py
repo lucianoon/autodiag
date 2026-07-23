@@ -1,16 +1,20 @@
 """
 ELM327 reader via pyserial.
-Suporta USB (/dev/cu.usbserial-*), Bluetooth (/dev/cu.OBDII*) e Wi-Fi (TCP).
+Suporta USB, Bluetooth serial e Wi-Fi (TCP) em Windows, Linux e macOS.
 """
-import asyncio
 import glob
 import re
 import socket
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import serial
+from serial.tools import list_ports
+
+
+class ELM327Error(ConnectionError):
+    """Falha de comunicação com o adaptador ELM327."""
 
 
 @dataclass
@@ -36,13 +40,28 @@ class DTCRecord:
     status: str = "stored"  # stored | pending
 
 
+# Identificadores comuns de adaptadores ELM327 (chipsets USB-serial e nomes Bluetooth)
+_PORT_KEYWORDS = (
+    "obdii", "obd-ii", "obd", "elm327", "elm",
+    "ch340", "ch341", "cp210", "ftdi", "pl2303",
+    "usb serial", "usb-serial", "usbserial",
+)
+
+
 def _auto_detect_port() -> str | None:
+    """Procura um adaptador ELM327 nas portas seriais do sistema (Windows, Linux e macOS)."""
+    for p in sorted(list_ports.comports(), key=lambda p: p.device):
+        haystack = " ".join(
+            s for s in (p.device, p.description, p.manufacturer) if s
+        ).lower()
+        if any(k in haystack for k in _PORT_KEYWORDS):
+            return p.device
+    # Bluetooth pareado nem sempre aparece em comports: macOS expõe /dev/cu.*,
+    # Linux expõe /dev/rfcomm* após o bind
     candidates = (
-        glob.glob("/dev/cu.usbserial-*")
-        + glob.glob("/dev/cu.SLAB_USBtoUART*")
-        + glob.glob("/dev/cu.usbmodem*")
-        + glob.glob("/dev/cu.OBDII*")
+        glob.glob("/dev/cu.OBDII*")
         + glob.glob("/dev/cu.OBD*")
+        + glob.glob("/dev/rfcomm*")
     )
     return candidates[0] if candidates else None
 
@@ -82,14 +101,22 @@ class ELM327Reader:
             return self._connect_wifi()
         port = self._port or _auto_detect_port()
         if not port:
-            raise ConnectionError("Nenhuma porta ELM327 encontrada. Especifique com --port.")
-        self._ser = serial.Serial(port, baudrate=self.BAUD, timeout=self.TIMEOUT)
+            raise ELM327Error("Nenhuma porta ELM327 encontrada. Especifique com --port.")
+        try:
+            self._ser = serial.Serial(port, baudrate=self.BAUD, timeout=self.TIMEOUT)
+        except (serial.SerialException, OSError) as e:
+            raise ELM327Error(f"Falha ao abrir a porta {port}: {e}") from e
         return self._init_elm()
 
     def _connect_wifi(self) -> bool:
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.settimeout(self.TIMEOUT)
-        self._sock.connect((self._wifi_host, self._wifi_port))
+        try:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.settimeout(self.TIMEOUT)
+            self._sock.connect((self._wifi_host, self._wifi_port))
+        except OSError as e:
+            raise ELM327Error(
+                f"Falha ao conectar em {self._wifi_host}:{self._wifi_port}: {e}"
+            ) from e
         return self._init_elm()
 
     def _init_elm(self) -> bool:
@@ -102,11 +129,19 @@ class ELM327Reader:
         r = self._cmd("0100")  # check connectivity
         return "UNABLE" not in r and "ERROR" not in r
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         if self._ser and self._ser.is_open:
             self._ser.close()
         if self._sock:
             self._sock.close()
+            self._sock = None
+
+    def __enter__(self) -> "ELM327Reader":
+        self.connect()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.disconnect()
 
     # ── leitura ───────────────────────────────────────────────────
 
@@ -197,19 +232,30 @@ class ELM327Reader:
 
     # ── interno ───────────────────────────────────────────────────
 
-    def _cmd(self, cmd: str, wait: float = 0.3) -> str:
-        return self._send_raw(cmd + "\r", wait=wait)
+    def _cmd(self, cmd: str, wait: float = 0.3, retries: int = 1) -> str:
+        response = self._send_raw(cmd + "\r", wait=wait)
+        for _ in range(retries):
+            if response:
+                break
+            response = self._send_raw(cmd + "\r", wait=wait)
+        return response
 
     def _send_raw(self, data: str, wait: float = 0.3) -> str:
-        raw = data.encode()
+        raw = data.encode("ascii")
         if self._ser:
             self._ser.reset_input_buffer()
             self._ser.write(raw)
-            time.sleep(wait)
+            # lê até o prompt ">" do ELM327 ou até estourar o prazo
+            deadline = time.monotonic() + max(wait, self.TIMEOUT)
             response = b""
-            while self._ser.in_waiting:
-                response += self._ser.read(self._ser.in_waiting)
-                time.sleep(0.05)
+            while time.monotonic() < deadline:
+                waiting = self._ser.in_waiting
+                if waiting:
+                    response += self._ser.read(waiting)
+                    if b">" in response:
+                        break
+                else:
+                    time.sleep(0.02)
             return response.decode("ascii", errors="ignore").strip().replace(">", "")
         if self._sock:
             self._sock.sendall(raw)
