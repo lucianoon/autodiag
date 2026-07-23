@@ -16,6 +16,7 @@ Uso:
 
 import argparse
 import asyncio
+import io
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -25,16 +26,18 @@ from dotenv import load_dotenv
 load_dotenv(Path.home() / ".autodiag" / ".env")
 load_dotenv(".env")
 
-from autodiag.core.vehicle import VehicleProfile, decode_vin_nhtsa, decode_vin_local
-from autodiag.elm327 import create_reader
-from autodiag.elm327.reader import LivePIDs, DTCRecord
-from autodiag.db.history import History, Session
 from autodiag import ui
+from autodiag.core.vehicle import VehicleProfile, decode_vin_local, decode_vin_nhtsa
+from autodiag.db.history import History, Session
+from autodiag.elm327 import create_reader
+from autodiag.elm327.reader import DTCRecord, LivePIDs
 
 
 def _infer_urgency(dtcs: list[DTCRecord], pids: LivePIDs) -> str:
-    CRITICAL = {"P0300","P0301","P0302","P0303","P0304","P0700","P0740","U0100","U0001","B0001","B0002","B1001","C0900"}
-    ATTENTION = {"P0101","P0171","P0172","P0174","P0175","P0401","P0506","P0507","U0121","P0420","P0430","P0730","P0741"}
+    CRITICAL = {"P0300", "P0301", "P0302", "P0303", "P0304", "P0700", "P0740",
+                "U0100", "U0001", "B0001", "B0002", "B1001", "C0900"}
+    ATTENTION = {"P0101", "P0171", "P0172", "P0174", "P0175", "P0401", "P0506",
+                 "P0507", "U0121", "P0420", "P0430", "P0730", "P0741"}
     codes = {d.code for d in dtcs}
     if codes & CRITICAL:
         return "critico"
@@ -122,7 +125,8 @@ async def cmd_scan(args):
 
     # KM + notas
     km_raw = input("\n  Quilometragem atual (km): ").strip()
-    km = int(km_raw.replace(".", "").replace(",", "")) if km_raw.isdigit() or km_raw.replace(".", "").replace(",", "").isdigit() else None
+    km_digits = km_raw.replace(".", "").replace(",", "")
+    km = int(km_digits) if km_digits.isdigit() else None
     notes = input("  Observações (opcional): ").strip()
 
     # Salvar
@@ -190,10 +194,11 @@ def main():
     if sys.platform == "win32":
         # Console legado do Windows usa cp1252; a saída do rich exige UTF-8
         for stream in (sys.stdout, sys.stderr):
-            try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
-            except (AttributeError, OSError):
-                pass
+            if isinstance(stream, io.TextIOWrapper):
+                try:
+                    stream.reconfigure(encoding="utf-8", errors="replace")
+                except OSError:
+                    pass
 
     parser = argparse.ArgumentParser(
         prog="autodiag",
@@ -204,7 +209,7 @@ def main():
     # scan
     p_scan = sub.add_parser("scan", help="Conectar e executar diagnóstico completo")
     p_scan.add_argument("--port", metavar="PORTA", help="Ex: /dev/cu.usbserial-1410")
-    p_scan.add_argument("--wifi", metavar="HOST", help="IP do adaptador Wi-Fi (padrão: 192.168.0.10)")
+    p_scan.add_argument("--wifi", metavar="HOST", help="IP do adaptador Wi-Fi, ex: 192.168.0.10")
     p_scan.add_argument("--no-ai", action="store_true", help="Pular análise com Claude")
     p_scan.add_argument("--demo", action="store_true",
                         help="Usar adaptador simulado (roda sem hardware OBD2)")
@@ -246,9 +251,11 @@ def main():
         cmd_clear(args)
     elif args.cmd == "serve":
         import uvicorn
+
         from autodiag.web.server import app
         if getattr(args, "open", False):
-            import webbrowser, threading
+            import threading
+            import webbrowser
             threading.Timer(1.0, lambda: webbrowser.open(f"http://{args.host}:{args.port}")).start()
         print(f"  AutoDiag web → http://{args.host}:{args.port}")
         uvicorn.run(app, host=args.host, port=args.port)

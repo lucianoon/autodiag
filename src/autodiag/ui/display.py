@@ -1,7 +1,7 @@
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
 from autodiag.core.dtc import lookup, severity_color
 from autodiag.core.vehicle import VehicleProfile
@@ -99,7 +99,8 @@ def history_table(sessions: list[dict]):
     t.add_column("Urgência", width=12)
     t.add_column("KM", width=8)
     for s in sessions:
-        color = {"critico": "red", "atencao": "yellow", "informativo": "green"}.get(s.get("urgency", ""), "white")
+        colors = {"critico": "red", "atencao": "yellow", "informativo": "green"}
+        color = colors.get(s.get("urgency", ""), "white")
         t.add_row(
             str(s["id"]),
             s["ts"],

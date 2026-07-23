@@ -1,7 +1,6 @@
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 DB_PATH = Path.home() / ".autodiag" / "history.db"
@@ -76,7 +75,9 @@ class History:
             s.diagnosis, s.cost_min, s.cost_max, s.km, s.notes,
         ))
         self._con.commit()
-        return cur.lastrowid
+        rowid = cur.lastrowid
+        assert rowid is not None  # INSERT sempre gera rowid
+        return rowid
 
     def list(self, limit: int = 10) -> list[dict]:
         rows = self._con.execute(

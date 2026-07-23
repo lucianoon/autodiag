@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
 import httpx
 
 _VIN_YEAR: dict[str, int] = {

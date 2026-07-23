@@ -26,4 +26,29 @@ packages = ["src/autodiag"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-pyserial>=3.5",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# load_dotenv() precisa rodar antes dos imports do pacote
+"src/autodiag/cli.py" = ["E402"]
+"src/autodiag/web/server.py" = ["E402"]
+# tabela de dados de DTCs: legibilidade > limite de coluna
+"src/autodiag/core/dtc.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true

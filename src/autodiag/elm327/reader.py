@@ -87,7 +87,12 @@ class ELM327Reader:
     BAUD = 38400
     TIMEOUT = 2.0
 
-    def __init__(self, port: str | None = None, wifi_host: str | None = None, wifi_port: int = 35000):
+    def __init__(
+        self,
+        port: str | None = None,
+        wifi_host: str | None = None,
+        wifi_port: int = 35000,
+    ):
         self._port = port
         self._wifi_host = wifi_host
         self._wifi_port = wifi_port
@@ -269,7 +274,7 @@ class ELM327Reader:
                     chunks.append(chunk)
                     if b">" in chunk:
                         break
-            except socket.timeout:
+            except TimeoutError:
                 pass
             return b"".join(chunks).decode("ascii", errors="ignore").strip().replace(">", "")
         return ""

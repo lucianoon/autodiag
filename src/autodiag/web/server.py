@@ -5,13 +5,14 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv(Path.home() / ".autodiag" / ".env")
 
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from autodiag.core.dtc import lookup, DTC_DATABASE
-from autodiag.core.vehicle import decode_vin_local, VehicleProfile
+from autodiag.core.dtc import DTC_DATABASE, lookup
+from autodiag.core.vehicle import VehicleProfile, decode_vin_local
 from autodiag.db.history import History, Session
 from autodiag.elm327 import create_reader
 from autodiag.elm327.reader import DTCRecord, LivePIDs
@@ -102,7 +103,8 @@ async def api_scan_stream(
             reader = create_reader(port=port, wifi_host=wifi, demo=demo)
             connected = reader.connect()
             if not connected:
-                send({"type": "error", "message": "Falha ao inicializar ELM327. Verifique a conexão."})
+                send({"type": "error",
+                      "message": "Falha ao inicializar ELM327. Verifique a conexão."})
                 return
             send({"type": "status", "message": "Adaptador conectado"})
 
