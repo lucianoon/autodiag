@@ -2,6 +2,22 @@
 name = "autodiag"
 version = "0.1.0"
 description = "Diagnóstico OBD2 universal para veículos 2015+"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Luciano de Oliveira Nunes" }]
+keywords = ["obd2", "elm327", "diagnostico", "automotive", "dtc", "can"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Natural Language :: Portuguese (Brazilian)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.40.0",
@@ -12,6 +28,11 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/lucianoon/autodiag"
+Issues = "https://github.com/lucianoon/autodiag/issues"
+Changelog = "https://github.com/lucianoon/autodiag/blob/main/CHANGELOG.md"
 
 [project.scripts]
 autodiag = "autodiag.cli:main"
