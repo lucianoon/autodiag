@@ -59,7 +59,7 @@ def _decode_dtcs(raw: str) -> list[DTCRecord]:
         if len(chunk) < 4 or chunk == "0000":
             continue
         prefix = PREFIX.get(chunk[0], "P?")
-        code = prefix[0] + chunk[0] + chunk[1:]
+        code = prefix + chunk[1:]
         dtcs.append(DTCRecord(code=code.upper()))
     return dtcs
 
