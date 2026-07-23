@@ -186,6 +186,14 @@ def cmd_clear(args):
 
 
 def main():
+    if sys.platform == "win32":
+        # Console legado do Windows usa cp1252; a saída do rich exige UTF-8
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, OSError):
+                pass
+
     parser = argparse.ArgumentParser(
         prog="autodiag",
         description="Diagnóstico OBD2 universal para veículos 2015+",
