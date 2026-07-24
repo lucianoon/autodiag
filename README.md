@@ -1,5 +1,6 @@
 # AutoDiag
 
+[![PyPI](https://img.shields.io/pypi/v/autodiag)](https://pypi.org/project/autodiag/)
 [![CI](https://github.com/lucianoon/autodiag/actions/workflows/ci.yml/badge.svg)](https://github.com/lucianoon/autodiag/actions/workflows/ci.yml)
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
 
@@ -62,7 +63,14 @@ src/autodiag/
 
 ## Instalação
 
-Requer Python 3.11+ e [uv](https://docs.astral.sh/uv/):
+Direto do [PyPI](https://pypi.org/project/autodiag/) (Python 3.11+):
+
+```bash
+pip install autodiag
+autodiag scan --demo   # experimente sem hardware
+```
+
+Para desenvolver, use [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/lucianoon/autodiag.git
