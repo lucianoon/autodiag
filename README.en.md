@@ -218,6 +218,9 @@ uv run mypy
 Tests, lint and type-check run in CI (GitHub Actions, Ubuntu, Python 3.12) on
 every push and pull request.
 
+The OIDC-based versioning and publishing process is documented in
+[`RELEASING.md`](RELEASING.md).
+
 ## License
 
 [MIT](LICENSE) — © 2026 Luciano de Oliveira Nunes.

@@ -224,6 +224,9 @@ uv run mypy
 Testes, lint e type-check rodam em CI (GitHub Actions, Ubuntu, Python 3.12)
 a cada push e pull request.
 
+O processo de versão e publicação por OIDC está documentado em
+[`RELEASING.md`](RELEASING.md).
+
 ## Limitações e segurança
 
 - O diagnóstico é informativo e não substitui inspeção por profissional
