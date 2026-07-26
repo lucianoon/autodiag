@@ -29,6 +29,11 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
 ]
 
+[project.optional-dependencies]
+# Backend OpenAI-compatible: OpenAI, OpenRouter, Groq, Together, vLLM,
+# Ollama, LM Studio. Não é necessário para o backend Anthropic nativo.
+openai = ["openai>=1.40.0"]
+
 [project.urls]
 Repository = "https://github.com/lucianoon/autodiag"
 Issues = "https://github.com/lucianoon/autodiag/issues"
@@ -50,6 +55,9 @@ dev = [
     "ruff>=0.9",
     "mypy>=1.14",
     "types-pyserial>=3.5",
+    # Instalado no dev para que o mypy type-cheque o backend OpenAI-compatible;
+    # em runtime continua sendo o extra opcional [openai].
+    "openai>=1.40.0",
 ]
 
 [tool.ruff]

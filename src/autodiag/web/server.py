@@ -151,9 +151,9 @@ async def api_scan_stream(
             # IA
             analysis = ""
             if not no_ai:
-                from autodiag.agents.diagnostic import analyze, is_configured
+                from autodiag.agents.diagnostic import analyze, describe, is_configured
                 if is_configured():
-                    send({"type": "status", "message": "Analisando com Claude..."})
+                    send({"type": "status", "message": f"Analisando com {describe()}..."})
                     try:
                         analysis = analyze(vehicle, dtcs, pids)
                         send({"type": "analysis", "text": analysis})

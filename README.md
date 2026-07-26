@@ -32,9 +32,10 @@ com um veículo simulado — sem hardware nenhum.
 - **Modo demo** (`--demo` na CLI e checkbox na web): adaptador simulado com um
   cenário realista de mistura pobre + falha de ignição (P0171/P0300), para
   testar a ferramenta inteira sem hardware.
-- **Análise opcional com IA** (Claude Opus 4.8 via SDK da Anthropic, com
-  streaming e thinking adaptativo) quando `ANTHROPIC_API_KEY` está definida —
-  pode ser desativada com `--no-ai`.
+- **Análise opcional com IA, com qualquer modelo** — Anthropic nativo
+  (streaming + thinking adaptativo) ou qualquer endpoint OpenAI-compatible
+  (OpenAI, OpenRouter, Groq, Together, vLLM, Ollama, LM Studio). A escolha é
+  por variável de ambiente, sem editar código; `--no-ai` desativa.
 - **Histórico local** em SQLite (`~/.autodiag/history.db`) com listagem e
   resumo estatístico (total, críticos, DTCs mais frequentes).
 - **Interface web** (FastAPI + uvicorn) com página única e streaming do scan
@@ -53,7 +54,8 @@ src/autodiag/
 │   ├── reader.py       # Comunicação ELM327 (serial/Wi-Fi), decodificação de DTCs e PIDs
 │   └── sim.py          # Adaptador simulado do modo demo
 ├── agents/
-│   └── diagnostic.py   # Análise assistida por IA (Anthropic)
+│   ├── provider.py     # Porta única para LLMs (Anthropic + OpenAI-compatible)
+│   └── diagnostic.py   # Prompt de diagnóstico automotivo
 ├── db/
 │   └── history.py      # Histórico de diagnósticos em SQLite
 ├── ui/
@@ -81,7 +83,9 @@ uv sync
 ```
 
 Para usar a análise com IA (opcional), copie `.env.example` para `.env` e
-defina `ANTHROPIC_API_KEY` (também é lido de `~/.autodiag/.env`).
+configure um modelo (também é lido de `~/.autodiag/.env`). Veja
+[Escolhendo o modelo](#escolhendo-o-modelo) — funciona com Anthropic, OpenAI,
+OpenRouter, Groq ou um servidor local como Ollama.
 
 ## Uso
 
@@ -124,6 +128,53 @@ seriais do sistema são enumeradas via pyserial e filtradas por identificadores
 típicos de adaptadores ELM327 (chipsets CH340/CP210x/FTDI/PL2303 e nomes
 "OBDII"). Se o seu adaptador não for reconhecido, informe a porta com
 `--port` (ex.: `COM3` no Windows, `/dev/ttyUSB0` no Linux).
+
+## Escolhendo o modelo
+
+O acesso ao LLM tem uma porta única (`agents/provider.py`) com dois backends
+atrás da mesma interface, escolhidos por variável de ambiente:
+
+| Variável | Valores |
+|---|---|
+| `AUTODIAG_LLM_BACKEND` | `auto` (padrão), `anthropic`, `openai` |
+| `AUTODIAG_MODEL` | id do modelo; default `claude-opus-5` ou `gpt-4.1-mini` |
+| `AUTODIAG_BASE_URL` | endpoint OpenAI-compatible (também aceita `OPENAI_BASE_URL`) |
+| `AUTODIAG_API_KEY` | credencial; cai para `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` |
+
+No modo `auto`: chave da Anthropic ⇒ backend `anthropic`; senão, base URL ou
+chave OpenAI ⇒ backend `openai`; sem nada, a análise por IA é pulada.
+
+```bash
+# Anthropic (backend nativo: streaming + thinking adaptativo)
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# OpenAI
+export OPENAI_API_KEY=sk-...
+
+# OpenRouter, Groq, Together, DeepInfra, Fireworks…
+export AUTODIAG_BASE_URL=https://openrouter.ai/api/v1
+export AUTODIAG_API_KEY=sk-or-v1-...
+export AUTODIAG_MODEL=meta-llama/llama-3.3-70b-instruct
+
+# Ollama ou LM Studio local — sem credencial nenhuma
+export AUTODIAG_BASE_URL=http://localhost:11434/v1
+export AUTODIAG_MODEL=llama3.1
+```
+
+O backend OpenAI-compatible exige um extra opcional:
+
+```bash
+pip install 'autodiag[openai]'
+```
+
+Para um scan pontual, `--model` sobrescreve o ambiente:
+
+```bash
+uv run autodiag scan --model claude-sonnet-5
+```
+
+Servidores locais normalmente não pedem credencial; quando há base URL e
+nenhuma chave, o cliente envia um placeholder — o servidor ignora o valor.
 
 ## Testes
 

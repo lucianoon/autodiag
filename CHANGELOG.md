@@ -3,6 +3,30 @@
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/);
 versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não publicado]
+
+### Adicionado
+
+- Porta única para LLMs em `agents/provider.py`, com dois backends atrás da
+  mesma interface: Anthropic nativo (streaming + thinking adaptativo) e
+  qualquer endpoint OpenAI-compatible (OpenAI, OpenRouter, Groq, Together,
+  vLLM, Ollama, LM Studio).
+- Seleção de modelo por ambiente — `AUTODIAG_LLM_BACKEND`, `AUTODIAG_MODEL`,
+  `AUTODIAG_BASE_URL`, `AUTODIAG_API_KEY` — e por `--model` na CLI.
+- Extra opcional `autodiag[openai]` para o backend OpenAI-compatible.
+- Tratamento de `stop_reason="refusal"`: a recusa por política de conteúdo
+  retorna HTTP 200 com conteúdo vazio ou parcial e, sem esta checagem, o
+  parecer sairia truncado em silêncio.
+
+### Alterado
+
+- Modelo padrão da Anthropic: `claude-opus-4-8` → `claude-opus-5`.
+- O modelo deixou de ser fixo no código: `DEFAULT_MODEL` em
+  `agents/diagnostic.py` não existe mais; o parâmetro `model` de `analyze()`
+  agora aceita `None` (usa o default do backend resolvido).
+- Mensagens da CLI e da web deixaram de citar "Claude" e passam a nomear o
+  modelo ativo.
+
 ## [0.1.0] — 2026-07-23
 
 Primeira versão publicada.

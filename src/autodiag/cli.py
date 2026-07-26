@@ -5,7 +5,8 @@ Uso:
   autodiag scan                  # diagnóstico completo (detecta porta automaticamente)
   autodiag scan --port /dev/cu.x # porta específica
   autodiag scan --wifi 192.168.0.10  # adaptador Wi-Fi
-  autodiag scan --no-ai          # sem análise Claude
+  autodiag scan --no-ai          # sem análise IA
+  autodiag scan --model gpt-4.1-mini  # escolher o modelo
   autodiag scan --demo           # sem hardware: veículo simulado (P0171 + P0300)
   autodiag history               # últimos 10 diagnósticos
   autodiag history --limit 20
@@ -110,13 +111,22 @@ async def cmd_scan(args):
     # IA
     diagnosis_text = ""
     if not getattr(args, "no_ai", False):
-        from autodiag.agents.diagnostic import AIUnavailableError, analyze, is_configured
+        from autodiag.agents.diagnostic import (
+            AIUnavailableError,
+            analyze,
+            describe,
+            is_configured,
+        )
         if not is_configured():
-            ui.display.warn("ANTHROPIC_API_KEY não definida — análise IA ignorada.")
+            ui.display.warn(
+                "Nenhum modelo configurado — análise IA ignorada. Defina "
+                "ANTHROPIC_API_KEY, OPENAI_API_KEY ou AUTODIAG_BASE_URL."
+            )
         else:
-            ui.display.section("Análise com IA (Claude)")
+            model = getattr(args, "model", None)
+            ui.display.section(f"Análise com IA ({model or describe()})")
             try:
-                diagnosis_text = analyze(vehicle, dtcs, pids)
+                diagnosis_text = analyze(vehicle, dtcs, pids, model=model)
                 ui.display.analysis_panel(diagnosis_text, urgency)
             except AIUnavailableError as e:
                 ui.display.warn(str(e))
@@ -210,7 +220,10 @@ def main():
     p_scan = sub.add_parser("scan", help="Conectar e executar diagnóstico completo")
     p_scan.add_argument("--port", metavar="PORTA", help="Ex: /dev/cu.usbserial-1410")
     p_scan.add_argument("--wifi", metavar="HOST", help="IP do adaptador Wi-Fi, ex: 192.168.0.10")
-    p_scan.add_argument("--no-ai", action="store_true", help="Pular análise com Claude")
+    p_scan.add_argument("--no-ai", action="store_true", help="Pular análise com IA")
+    p_scan.add_argument("--model", metavar="MODELO",
+                        help="Modelo a usar (sobrescreve AUTODIAG_MODEL). "
+                             "Ex: claude-opus-5, gpt-4.1-mini, llama3.1")
     p_scan.add_argument("--demo", action="store_true",
                         help="Usar adaptador simulado (roda sem hardware OBD2)")
 
