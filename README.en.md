@@ -14,6 +14,22 @@ serves a local web interface that streams the scan in real time.
 No adapter on hand? `autodiag scan --demo` runs the whole flow against a
 simulated vehicle — no hardware at all.
 
+## Reproducible demo
+
+![AutoDiag running a simulated OBD2 scan with DTCs and live PIDs](docs/assets/autodiag-demo.jpg)
+
+This screenshot was produced by the application itself with the deterministic
+P0171/P0300 scenario. To reproduce the same flow locally:
+
+```bash
+pip install autodiag
+autodiag serve
+```
+
+Open `http://localhost:8000`, select **Scan**, check **Modo demo** and
+**Sem análise IA**, then click **Iniciar Scan**. No adapter, API key, or
+external access is required.
+
 > **Note on language:** the bundled DTC database stores its descriptions and
 > probable causes in Portuguese, and severity levels are the literal strings
 > `critico` / `atencao` / `informativo`. The CLI and the web UI render those

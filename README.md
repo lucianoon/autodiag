@@ -14,6 +14,22 @@ oferece uma interface web local com acompanhamento do scan em tempo real.
 Não tem um adaptador em mãos? `autodiag scan --demo` executa o fluxo completo
 com um veículo simulado — sem hardware nenhum.
 
+## Demo reproduzível
+
+![AutoDiag executando um scan OBD2 simulado com DTCs e PIDs ao vivo](docs/assets/autodiag-demo.jpg)
+
+Esta captura foi gerada pela própria aplicação com o cenário determinístico
+P0171/P0300. Para reproduzir o mesmo fluxo localmente:
+
+```bash
+pip install autodiag
+autodiag serve
+```
+
+Abra `http://localhost:8000`, entre em **Scan**, marque **Modo demo** e
+**Sem análise IA**, e clique em **Iniciar Scan**. Nenhum adaptador, chave de
+API ou acesso externo é necessário.
+
 ## Evidências rápidas
 
 | Evidência | O que demonstra |
