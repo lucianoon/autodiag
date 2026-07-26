@@ -5,6 +5,8 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+## [0.2.0] — 2026-07-26
+
 ### Adicionado
 
 - Porta única para LLMs em `agents/provider.py`, com dois backends atrás da
@@ -17,6 +19,10 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 - Tratamento de `stop_reason="refusal"`: a recusa por política de conteúdo
   retorna HTTP 200 com conteúdo vazio ou parcial e, sem esta checagem, o
   parecer sairia truncado em silêncio.
+- Demo visual reproduzível da interface web, gerada com o adaptador simulado.
+- Política de segurança, reporte privado de vulnerabilidades, CodeQL e
+  atualizações automáticas de dependências.
+- Cobertura ampliada de 67 para 89 testes.
 
 ### Alterado
 
@@ -56,4 +62,6 @@ Primeira versão publicada.
 - Saída no console legado do Windows quebrava com `UnicodeEncodeError`
   (streams agora forçados a UTF-8).
 
+[Não publicado]: https://github.com/lucianoon/autodiag/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lucianoon/autodiag/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucianoon/autodiag/releases/tag/v0.1.0
