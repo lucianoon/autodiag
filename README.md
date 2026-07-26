@@ -14,6 +14,16 @@ oferece uma interface web local com acompanhamento do scan em tempo real.
 Não tem um adaptador em mãos? `autodiag scan --demo` executa o fluxo completo
 com um veículo simulado — sem hardware nenhum.
 
+## Evidências rápidas
+
+| Evidência | O que demonstra |
+|---|---|
+| Publicado no [PyPI](https://pypi.org/project/autodiag/) | Empacotamento e distribuição reais |
+| 89 funções de teste | DTCs, PIDs, VIN, histórico, providers e interface web |
+| `ruff` + `mypy` + pytest na CI | Qualidade automatizada a cada mudança |
+| `autodiag scan --demo` | Fluxo completo reproduzível sem hardware |
+| CLI + FastAPI + SSE + SQLite | Produto vertical, não apenas uma chamada de LLM |
+
 ## O que ela faz hoje
 
 - **Leitura de DTCs** (modo 03) via ELM327, com decodificação dos códigos
@@ -197,6 +207,17 @@ uv run mypy
 
 Testes, lint e type-check rodam em CI (GitHub Actions, Ubuntu, Python 3.12)
 a cada push e pull request.
+
+## Limitações e segurança
+
+- O diagnóstico é informativo e não substitui inspeção por profissional
+  qualificado; a limpeza de DTCs exige confirmação explícita.
+- A base local cobre códigos comuns. Códigos específicos de fabricante podem
+  exigir documentação ou scanner proprietário.
+- O modo demo valida o software, mas não substitui testes com diferentes
+  adaptadores ELM327 e veículos reais.
+- A análise por LLM é opcional e nunca deve ser usada como única base para uma
+  decisão de segurança.
 
 ## Licença
 
