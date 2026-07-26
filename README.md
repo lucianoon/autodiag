@@ -1,82 +1,78 @@
 # AutoDiag
 
-*[Versão em português](https://github.com/lucianoon/autodiag/blob/main/README.pt-BR.md)*
+*[English version](https://github.com/lucianoon/autodiag/blob/main/README.en.md)*
 
 [![PyPI](https://img.shields.io/pypi/v/autodiag)](https://pypi.org/project/autodiag/)
 [![CI](https://github.com/lucianoon/autodiag/actions/workflows/ci.yml/badge.svg)](https://github.com/lucianoon/autodiag/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
 
-An OBD2 diagnostics tool in Python for 2015+ vehicles, using **ELM327** adapters
-(USB, Bluetooth serial or Wi-Fi). It reads diagnostic trouble codes (DTCs),
-polls live PIDs, identifies the vehicle by VIN, keeps history in SQLite and
-serves a local web interface that streams the scan in real time.
+Ferramenta de diagnóstico OBD2 em Python para veículos 2015+ usando adaptadores
+**ELM327** (USB, Bluetooth serial ou Wi-Fi). Lê códigos de falha (DTCs), coleta
+PIDs ao vivo, identifica o veículo pelo VIN, guarda o histórico em SQLite e
+oferece uma interface web local com acompanhamento do scan em tempo real.
 
-No adapter on hand? `autodiag scan --demo` runs the whole flow against a
-simulated vehicle — no hardware at all.
+Não tem um adaptador em mãos? `autodiag scan --demo` executa o fluxo completo
+com um veículo simulado — sem hardware nenhum.
 
-> **Note on language:** the bundled DTC database stores its descriptions and
-> probable causes in Portuguese, and severity levels are the literal strings
-> `critico` / `atencao` / `informativo`. The CLI and the web UI render those
-> values as-is.
+## O que ela faz hoje
 
-## What it does today
+- **Leitura de DTCs** (modo 03) via ELM327, com decodificação dos códigos
+  P/C/B/U e consulta a uma base local com ~65 códigos comuns (descrição em
+  português, severidade, sistema e causas prováveis).
+- **Limpeza de DTCs** (modo 04), com confirmação.
+- **PIDs ao vivo** (modo 01): RPM, velocidade, temperatura do motor e da
+  admissão, posição da borboleta, MAF, fuel trim curto/longo B1, tensão da
+  sonda O2 B1S1 e nível de combustível.
+- **Identificação do veículo**: leitura do VIN (modo 09 02), decodificação
+  local (WMI + ano-modelo) e enriquecimento opcional pela API pública da
+  NHTSA (vPIC).
+- **Heurística de urgência** (`critico` / `atencao` / `informativo`) baseada
+  nos DTCs encontrados e em limites de PIDs (superaquecimento, fuel trim alto,
+  MAF baixo).
+- **Modo demo** (`--demo` na CLI e checkbox na web): adaptador simulado com um
+  cenário realista de mistura pobre + falha de ignição (P0171/P0300), para
+  testar a ferramenta inteira sem hardware.
+- **Análise opcional com IA** (Claude Opus 4.8 via SDK da Anthropic, com
+  streaming e thinking adaptativo) quando `ANTHROPIC_API_KEY` está definida —
+  pode ser desativada com `--no-ai`.
+- **Histórico local** em SQLite (`~/.autodiag/history.db`) com listagem e
+  resumo estatístico (total, críticos, DTCs mais frequentes).
+- **Interface web** (FastAPI + uvicorn) com página única e streaming do scan
+  via Server-Sent Events, além de API JSON para histórico e consulta de DTCs.
 
-- **DTC reading** (mode 03) over ELM327, decoding P/C/B/U codes and looking
-  them up in a local database of ~65 common codes (description, severity,
-  affected system and probable causes).
-- **DTC clearing** (mode 04), with confirmation.
-- **Live PIDs** (mode 01): RPM, speed, engine and intake temperature, throttle
-  position, MAF, short/long fuel trim bank 1, O2 sensor B1S1 voltage and fuel
-  level.
-- **Vehicle identification**: VIN read (mode 09 02), local decoding (WMI +
-  model year) and optional enrichment through NHTSA's public vPIC API.
-- **Urgency heuristic** (`critico` / `atencao` / `informativo` — critical /
-  warning / informational) derived from the DTCs found and from PID thresholds
-  (overheating, high fuel trim, low MAF).
-- **Demo mode** (`--demo` on the CLI, a checkbox on the web UI): a simulated
-  adapter running a realistic lean-mixture + misfire scenario (P0171/P0300), so
-  the entire tool can be exercised without hardware.
-- **Optional AI analysis** (Claude Opus 4.8 through the Anthropic SDK, with
-  streaming and adaptive thinking) when `ANTHROPIC_API_KEY` is set — disable it
-  with `--no-ai`.
-- **Local history** in SQLite (`~/.autodiag/history.db`) with listing and a
-  statistical summary (total scans, criticals, most frequent DTCs).
-- **Web interface** (FastAPI + uvicorn): a single page streaming the scan over
-  Server-Sent Events, plus a JSON API for history and DTC lookup.
-
-## Architecture
+## Arquitetura
 
 ```
 src/autodiag/
 ├── cli.py              # CLI (argparse): scan, history, summary, dtc, clear, serve
 ├── core/
-│   ├── dtc.py          # Local DTC database (DTCInfo, lookup, severity)
-│   └── vehicle.py      # VIN decoding (local + NHTSA API)
+│   ├── dtc.py          # Base local de DTCs (DTCInfo, lookup, severidade)
+│   └── vehicle.py      # Decodificação de VIN (local + API NHTSA)
 ├── elm327/
-│   ├── __init__.py     # OBDReader protocol + create_reader factory (real/simulated)
-│   ├── reader.py       # ELM327 communication (serial/Wi-Fi), DTC and PID decoding
-│   └── sim.py          # Simulated adapter behind demo mode
+│   ├── __init__.py     # Protocolo OBDReader + fábrica create_reader (real/simulado)
+│   ├── reader.py       # Comunicação ELM327 (serial/Wi-Fi), decodificação de DTCs e PIDs
+│   └── sim.py          # Adaptador simulado do modo demo
 ├── agents/
-│   └── diagnostic.py   # AI-assisted analysis (Anthropic)
+│   └── diagnostic.py   # Análise assistida por IA (Anthropic)
 ├── db/
-│   └── history.py      # Diagnostic history in SQLite
+│   └── history.py      # Histórico de diagnósticos em SQLite
 ├── ui/
-│   └── display.py      # Terminal output (rich): tables, panels, status
+│   └── display.py      # Saída no terminal (rich): tabelas, painéis, status
 └── web/
-    ├── server.py       # FastAPI: web page, JSON API and SSE scan stream
-    └── static/         # index.html for the web interface
+    ├── server.py       # FastAPI: página web, API JSON e stream SSE do scan
+    └── static/         # index.html da interface web
 ```
 
-## Installation
+## Instalação
 
-Straight from [PyPI](https://pypi.org/project/autodiag/) (Python 3.11+):
+Direto do [PyPI](https://pypi.org/project/autodiag/) (Python 3.11+):
 
 ```bash
 pip install autodiag
-autodiag scan --demo   # try it without hardware
+autodiag scan --demo   # experimente sem hardware
 ```
 
-For development, use [uv](https://docs.astral.sh/uv/):
+Para desenvolver, use [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/lucianoon/autodiag.git
@@ -84,73 +80,73 @@ cd autodiag
 uv sync
 ```
 
-To enable the optional AI analysis, copy `.env.example` to `.env` and set
-`ANTHROPIC_API_KEY` (it is also read from `~/.autodiag/.env`).
+Para usar a análise com IA (opcional), copie `.env.example` para `.env` e
+defina `ANTHROPIC_API_KEY` (também é lido de `~/.autodiag/.env`).
 
-## Usage
+## Uso
 
-With an ELM327 adapter connected to the vehicle:
+Com um adaptador ELM327 conectado ao veículo:
 
 ```bash
-# Full diagnostic (auto-detects the port on macOS/Linux)
+# Diagnóstico completo (detecta a porta automaticamente em macOS/Linux)
 uv run autodiag scan
 
-# Specific port, or a Wi-Fi adapter
+# Porta específica ou adaptador Wi-Fi
 uv run autodiag scan --port /dev/cu.usbserial-1410
 uv run autodiag scan --wifi 192.168.0.10
 
-# Without AI analysis
+# Sem análise de IA
 uv run autodiag scan --no-ai
 
-# Clear the vehicle's DTCs (asks for confirmation)
+# Apagar DTCs do veículo (pede confirmação)
 uv run autodiag clear
 ```
 
-Without hardware, these still work:
+Sem hardware, ainda funcionam:
 
 ```bash
-# Full diagnostic flow against a simulated vehicle (P0171 + P0300)
+# Fluxo de diagnóstico completo com veículo simulado (P0171 + P0300)
 uv run autodiag scan --demo
 
-# Look up a code in the local database
+# Consultar um código na base local
 uv run autodiag dtc P0171
 
-# History and statistics for saved diagnostics
+# Histórico e estatísticas dos diagnósticos salvos
 uv run autodiag history --limit 20
 uv run autodiag summary
 
-# Web interface at http://localhost:8000
+# Interface web em http://localhost:8000
 uv run autodiag serve --open
 ```
 
-Port auto-detection works on Windows, Linux and macOS: system serial ports are
-enumerated through pyserial and filtered by identifiers typical of ELM327
-adapters (CH340/CP210x/FTDI/PL2303 chipsets and "OBDII" names). If your adapter
-is not recognized, pass the port explicitly with `--port` (`COM3` on Windows,
-`/dev/ttyUSB0` on Linux).
+A detecção automática de porta funciona em Windows, Linux e macOS: as portas
+seriais do sistema são enumeradas via pyserial e filtradas por identificadores
+típicos de adaptadores ELM327 (chipsets CH340/CP210x/FTDI/PL2303 e nomes
+"OBDII"). Se o seu adaptador não for reconhecido, informe a porta com
+`--port` (ex.: `COM3` no Windows, `/dev/ttyUSB0` no Linux).
 
-## Tests
+## Testes
 
-The tests cover pure logic — DTC and PID decoding against a fake reader, VIN
-handling, the urgency heuristic and history against a temporary database — and
-require neither hardware nor API keys:
+Os testes cobrem a lógica pura (decodificação de DTCs e PIDs com um reader
+falso, VIN, heurística de urgência e histórico com banco temporário) e não
+exigem hardware nem chaves de API:
 
 ```bash
 uv sync
 uv run pytest
 ```
 
-Code quality is checked with [ruff](https://docs.astral.sh/ruff/) (lint) and
-[mypy](https://mypy-lang.org/) (types):
+Qualidade de código é verificada com [ruff](https://docs.astral.sh/ruff/)
+(lint) e [mypy](https://mypy-lang.org/) (tipos):
 
 ```bash
 uv run ruff check .
 uv run mypy
 ```
 
-Tests, lint and type-check run in CI (GitHub Actions, Ubuntu, Python 3.12) on
-every push and pull request.
+Testes, lint e type-check rodam em CI (GitHub Actions, Ubuntu, Python 3.12)
+a cada push e pull request.
 
-## License
+## Licença
 
 [MIT](LICENSE) — © 2026 Luciano de Oliveira Nunes.
