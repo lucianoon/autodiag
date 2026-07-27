@@ -1,7 +1,9 @@
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from autodiag.core.dtc import lookup, severity_color
 from autodiag.core.vehicle import VehicleProfile
@@ -22,16 +24,20 @@ def section(title: str):
     console.print(f"\n[bold yellow]── {title}[/]")
 
 
+# ok/warn/err recebem texto que não controlamos — mensagens de exceção, nomes
+# de modelo, instruções com extras entre colchetes. O rich leria "[openai]" como
+# tag de estilo, então "pip install 'autodiag[openai]'" sairia como
+# "pip install 'autodiag'". escape() neutraliza os colchetes.
 def ok(msg: str):
-    console.print(f"  [green]✓[/] {msg}")
+    console.print(f"  [green]✓[/] {escape(msg)}")
 
 
 def warn(msg: str):
-    console.print(f"  [yellow]⚠[/] {msg}")
+    console.print(f"  [yellow]⚠[/] {escape(msg)}")
 
 
 def err(msg: str):
-    console.print(f"  [red]✗[/] {msg}")
+    console.print(f"  [red]✗[/] {escape(msg)}")
 
 
 def dtcs_table(dtcs: list[DTCRecord]):
@@ -84,7 +90,9 @@ def pids_table(pids: LivePIDs):
 
 def analysis_panel(text: str, urgency: str = "informativo"):
     color = {"critico": "red", "atencao": "yellow", "informativo": "green"}.get(urgency, "white")
-    console.print(Panel(text, title="Análise IA", border_style=color))
+    # Saída de modelo é texto arbitrário: um "[CRITICO]" desapareceria e um
+    # "[/PCV]" derrubaria o painel com MarkupError. Text() não parseia marcação.
+    console.print(Panel(Text(text), title="Análise IA", border_style=color))
 
 
 def history_table(sessions: list[dict]):

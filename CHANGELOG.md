@@ -5,6 +5,28 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+## [0.2.1] — 2026-07-27
+
+### Corrigido
+
+- A camada de display interpolava texto não confiável direto na marcação do
+  `rich`, que trata `[algo]` como tag de estilo. Três efeitos, todos observados
+  no 0.2.0:
+  - a mensagem que orienta a instalar o backend opcional saía como
+    `pip install 'autodiag'`, sem o `[openai]` — a instrução estava errada e
+    deixava o usuário em loop;
+  - trechos entre colchetes na análise da IA eram apagados em silêncio
+    (`[ver P0101]` desaparecia do parecer);
+  - uma tag de fechamento órfã na saída do modelo (`[/PCV]`) levantava
+    `MarkupError`, então a chamada era paga e o parecer não aparecia.
+
+  `ok`/`warn`/`err` agora passam por `rich.markup.escape`, e o painel de análise
+  renderiza via `rich.text.Text`, que não parseia marcação.
+
+### Adicionado
+
+- 7 testes de regressão para o tratamento de marcação (89 → 96).
+
 ## [0.2.0] — 2026-07-26
 
 ### Adicionado
