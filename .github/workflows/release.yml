@@ -52,8 +52,6 @@ jobs:
     environment:
       name: pypi
       url: https://pypi.org/project/autodiag/
-    permissions:
-      id-token: write
     steps:
       - name: Download distributions
         uses: actions/download-artifact@v7
@@ -61,5 +59,23 @@ jobs:
           name: python-package-distributions
           path: dist/
 
-      - name: Publish with Trusted Publishing
+      # Falha antes de subir nada quando o secret não está configurado, em vez
+      # de deixar o erro aparecer como recusa de autenticação do PyPI.
+      - name: Verify the PyPI token is configured
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "${PYPI_API_TOKEN}" ]; then
+            echo "::error::Secret PYPI_API_TOKEN ausente. Cadastre em Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      # Autenticação por token de API. Trusted publishing é preferível — não
+      # exige segredo de longa duração no repositório — e para voltar a ele
+      # basta remover o bloco `with:` e devolver `permissions: id-token: write`
+      # ao job, depois de cadastrar o publisher em pypi.org.
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
