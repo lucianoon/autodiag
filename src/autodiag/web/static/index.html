@@ -90,8 +90,12 @@
               <div class="row g-2 align-items-end">
                 <div class="col-md-4">
                   <label class="form-label text-muted small mb-1">Porta ELM327</label>
-                  <input type="text" class="form-control form-control-sm" id="scan-port"
+                  <div class="input-group input-group-sm">
+                  <input type="text" class="form-control" id="scan-port" list="scan-port-list"
                     placeholder="/dev/cu.usbserial-... (autodetectar)">
+                  <button class="btn btn-outline-secondary" type="button" onclick="loadPorts()">Detectar</button>
+                  </div>
+                  <datalist id="scan-port-list"></datalist>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label text-muted small mb-1">Wi-Fi host</label>
@@ -124,12 +128,32 @@
           </div>
         </div>
 
+        <div class="col-md-6" id="scan-health-card" style="display:none">
+          <div class="card h-100">
+            <div class="card-header small text-muted py-2">Status OBD</div>
+            <div class="card-body" id="scan-health-body"></div>
+          </div>
+        </div>
+
+        <div class="col-md-6" id="scan-supported-card" style="display:none">
+          <div class="card h-100">
+            <div class="card-header small text-muted py-2">Capacidades da ECU</div>
+            <div class="card-body" id="scan-supported-body"></div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="small text-muted">
+            O scan universal cobre motor/emissões e DTCs OBD2. ABS, airbag e câmbio completo dependem de acesso avançado por módulo e perfil do fabricante.
+          </div>
+        </div>
+
         <div class="col-md-6" id="scan-dtcs-card" style="display:none">
           <div class="card h-100">
             <div class="card-header small text-muted py-2">DTCs encontrados</div>
             <div class="card-body p-0">
               <table class="table table-sm mb-0" id="scan-dtcs-table">
-                <thead><tr><th>Código</th><th>Descrição</th><th>Urgência</th></tr></thead>
+                <thead><tr><th>Código</th><th>Status</th><th>Descrição</th><th>Urgência</th></tr></thead>
                 <tbody></tbody>
               </table>
             </div>
@@ -197,7 +221,13 @@
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 const SEV = { critico: 'danger', atencao: 'warning', informativo: 'info' };
-const sevBadge = s => `<span class="badge bg-${SEV[s]||'secondary'}">${s||'—'}</span>`;
+const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+})[ch]);
+const sevBadge = s => {
+  const sev = SEV[s] ? s : 'informativo';
+  return `<span class="badge bg-${SEV[sev]}">${esc(sev)}</span>`;
+};
 
 function pidBar(val, max, color) {
   const pct = Math.min(100, Math.max(0, (Math.abs(val) / max) * 100));
@@ -208,15 +238,22 @@ function pidBar(val, max, color) {
 
 function renderPIDs(pids) {
   const META = [
+    ['engine_load_pct',    'Carga calculada',      '%',    100,  null, null ],
     ['rpm',               'RPM',                'rpm',  5500, null, 600  ],
     ['speed_kmh',         'Velocidade',          'km/h', 200,  null, null ],
     ['coolant_temp_c',    'Temp. motor',         '°C',   120,  105,  null ],
     ['intake_temp_c',     'Temp. admissão',      '°C',   80,   null, null ],
+    ['timing_advance_deg', 'Avanço ignição',       '°',    60,   null, null ],
+    ['fuel_pressure_kpa',  'Pressão combustível',  'kPa',  800,  null, null ],
     ['throttle_pct',      'Borboleta',           '%',    100,  null, null ],
     ['maf_g_s',           'MAF',                 'g/s',  20,   null, 2.0  ],
+    ['commanded_equivalence_ratio','Lambda comandada','λ', 2.0, null, null ],
     ['fuel_trim_short_b1','Fuel trim curto B1',  '%',    30,   15,   null ],
     ['fuel_trim_long_b1', 'Fuel trim longo B1',  '%',    30,   10,   null ],
     ['o2_b1s1_v',         'O2 B1S1',             'V',    1.0,  null, 0.1  ],
+    ['o2_b1s2_v',         'O2 B1S2',             'V',    1.0,  null, 0.1  ],
+    ['o2_b2s1_v',         'O2 B2S1',             'V',    1.0,  null, 0.1  ],
+    ['o2_b2s2_v',         'O2 B2S2',             'V',    1.0,  null, 0.1  ],
     ['fuel_level_pct',    'Nível combustível',   '%',    100,  null, 10   ],
   ];
   let html = '';
@@ -227,7 +264,7 @@ function renderPIDs(pids) {
                 : (lo && val < lo) ? 'warning' : 'success';
     html += `<div class="mb-2">
       <div class="d-flex justify-content-between" style="font-size:12px; color:#8b949e; margin-bottom:3px;">
-        <span>${label}</span><span>${val} ${unit}</span>
+        <span>${esc(label)}</span><span>${esc(val)} ${esc(unit)}</span>
       </div>
       ${pidBar(val, max, color)}
     </div>`;
@@ -235,12 +272,39 @@ function renderPIDs(pids) {
   return html || '<span class="text-muted small">Sem dados</span>';
 }
 
+function renderVehicleStatus(ev) {
+  const monitor = ev.monitor_status || {};
+  const voltage = ev.battery_voltage == null ? '—' : `${ev.battery_voltage.toFixed(1)} V`;
+  const mil = monitor.mil_on == null ? '—' : monitor.mil_on ? 'acesa' : 'apagada';
+  const milClass = monitor.mil_on ? 'text-danger' : 'text-success';
+  const dtcCount = monitor.dtc_count == null ? '—' : monitor.dtc_count;
+  return `
+    <div class="d-flex justify-content-between border-bottom border-secondary py-1 small">
+      <span class="text-muted">Tensão módulo/adaptador</span><strong>${esc(voltage)}</strong>
+    </div>
+    <div class="d-flex justify-content-between border-bottom border-secondary py-1 small">
+      <span class="text-muted">MIL / luz de injeção</span><strong class="${milClass}">${esc(mil)}</strong>
+    </div>
+    <div class="d-flex justify-content-between py-1 small">
+      <span class="text-muted">DTCs reportados pela ECU</span><strong>${esc(dtcCount)}</strong>
+    </div>`;
+}
+
+function renderSupportedPIDs(pids) {
+  if (!pids || !pids.length) {
+    return '<span class="text-muted small">ECU não reportou PIDs suportados.</span>';
+  }
+  const preview = pids.slice(0, 24).map(pid => `<code class="me-2">${esc(pid)}</code>`).join('');
+  const more = pids.length > 24 ? `<span class="text-muted small">+${pids.length - 24}</span>` : '';
+  return `<div class="small mb-2 text-muted">${pids.length} PIDs suportados no intervalo 01-20</div>${preview}${more}`;
+}
+
 // ── log ──────────────────────────────────────────────────────────────────────
 
 function logClear() { document.getElementById('scan-log').innerHTML = ''; }
 function logLine(msg, cls = 'log-info') {
   const el = document.getElementById('scan-log');
-  el.innerHTML += `<div class="${cls}">▸ ${msg}</div>`;
+  el.innerHTML += `<div class="${cls}">▸ ${esc(msg)}</div>`;
   el.scrollTop = el.scrollHeight;
 }
 
@@ -258,13 +322,13 @@ async function loadDash() {
     <div class="col-sm-4">
       <div class="card stat-card text-center py-3">
         <div class="text-muted small mb-1">Total de diagnósticos</div>
-        <div class="val text-primary">${sum.total}</div>
+        <div class="val text-primary">${esc(sum.total)}</div>
       </div>
     </div>
     <div class="col-sm-4">
       <div class="card stat-card text-center py-3">
         <div class="text-muted small mb-1">Críticos</div>
-        <div class="val text-danger">${sum.critical}</div>
+        <div class="val text-danger">${esc(sum.critical)}</div>
       </div>
     </div>`;
 
@@ -274,8 +338,8 @@ async function loadDash() {
         <div class="text-muted small mb-2">DTCs mais frequentes</div>
         ${sum.top_dtcs.map(([code, cnt]) =>
           `<div class="d-flex justify-content-between small">
-            <code>${code}</code>
-            <span class="text-muted">${cnt}x</span>
+            <code>${esc(code)}</code>
+            <span class="text-muted">${esc(cnt)}x</span>
           </div>`
         ).join('')}
       </div>
@@ -285,21 +349,21 @@ async function loadDash() {
   if (last) {
     const color = SEV[last.urgency] || 'secondary';
     const dtcsHtml = (last.dtc_codes || []).map(c =>
-      `<code class="me-2 text-warning">${c}</code>`
+      `<code class="me-2 text-warning">${esc(c)}</code>`
     ).join('') || '<span class="text-muted">Nenhum</span>';
     const preview = (last.diagnosis || '').slice(0, 500);
     html += `<div class="col-12">
       <div class="card" style="border-left: 3px solid var(--bs-${color})">
         <div class="card-header small text-muted py-2 d-flex justify-content-between">
-          <span>Último diagnóstico</span><span>${last.ts}</span>
+          <span>Último diagnóstico</span><span>${esc(last.ts)}</span>
         </div>
         <div class="card-body">
           <div class="mb-2 d-flex align-items-center gap-2">
-            <strong>${last.vehicle_label || 'Veículo desconhecido'}</strong>
+            <strong>${esc(last.vehicle_label || 'Veículo desconhecido')}</strong>
             ${sevBadge(last.urgency)}
           </div>
           <div class="mb-3">${dtcsHtml}</div>
-          ${preview ? `<div class="analysis-box" style="max-height:200px;overflow:auto">${preview}${last.diagnosis.length>500?'…':''}</div>` : ''}
+          ${preview ? `<div class="analysis-box" style="max-height:200px;overflow:auto">${esc(preview)}${last.diagnosis.length>500?'…':''}</div>` : ''}
         </div>
       </div>
     </div>`;
@@ -317,10 +381,23 @@ async function loadDash() {
 
 let scanActive = false;
 
+async function loadPorts() {
+  const res = await fetch('/api/ports');
+  const data = await res.json();
+  const list = document.getElementById('scan-port-list');
+  list.innerHTML = (data.ports || []).map(port => `<option value="${esc(port)}"></option>`).join('');
+  if (data.ports && data.ports.length) {
+    document.getElementById('scan-port').value = data.ports[0];
+    logLine(`${data.ports.length} porta(s) ELM encontrada(s)`, 'log-ok');
+  } else {
+    logLine('Nenhuma porta ELM detectada por USB/Bluetooth.', 'log-warn');
+  }
+}
+
 function startScan() {
   if (scanActive) return;
   logClear();
-  ['scan-dtcs-card','scan-pids-card','scan-analysis-card'].forEach(id =>
+  ['scan-health-card','scan-supported-card','scan-dtcs-card','scan-pids-card','scan-analysis-card'].forEach(id =>
     document.getElementById(id).style.display = 'none'
   );
 
@@ -350,16 +427,27 @@ function startScan() {
     if (ev.type === 'error')   logLine('ERRO: ' + ev.message, 'log-err');
     if (ev.type === 'vin')     logLine(`VIN: ${ev.vin} → ${ev.vehicle}`, 'log-ok');
 
+    if (ev.type === 'vehicle_status') {
+      document.getElementById('scan-health-body').innerHTML = renderVehicleStatus(ev);
+      document.getElementById('scan-supported-body').innerHTML = renderSupportedPIDs(ev.supported_pids);
+      document.getElementById('scan-health-card').style.display = '';
+      document.getElementById('scan-supported-card').style.display = '';
+      const monitor = ev.monitor_status || {};
+      if (monitor.mil_on) logLine('MIL/luz de injeção reportada como acesa.', 'log-warn');
+      if (ev.battery_voltage != null) logLine(`Tensão reportada: ${ev.battery_voltage.toFixed(1)} V`, 'log-ok');
+    }
+
     if (ev.type === 'dtcs') {
       const n = ev.dtcs.length;
       logLine(`${n} DTC(s) encontrado(s)`, n ? 'log-warn' : 'log-ok');
       document.querySelector('#scan-dtcs-table tbody').innerHTML = n
         ? ev.dtcs.map(d => `<tr>
-            <td><code>${d.code}</code></td>
-            <td class="small">${d.description}</td>
+            <td><code>${esc(d.code)}</code></td>
+            <td class="small">${esc(d.status)}</td>
+            <td class="small">${esc(d.description)}</td>
             <td>${sevBadge(d.severity)}</td>
           </tr>`).join('')
-        : '<tr><td colspan="3" class="text-muted text-center small py-2">Nenhum DTC</td></tr>';
+        : '<tr><td colspan="4" class="text-muted text-center small py-2">Nenhum DTC</td></tr>';
       document.getElementById('scan-dtcs-card').style.display = '';
     }
 
@@ -406,14 +494,14 @@ async function loadHistory() {
   }
   tbody.innerHTML = rows.map(s => {
     const color = SEV[s.urgency] || 'secondary';
-    const dtcs = (s.dtc_codes || []).map(c => `<code class="me-1 text-warning">${c}</code>`).join('') || '—';
+    const dtcs = (s.dtc_codes || []).map(c => `<code class="me-1 text-warning">${esc(c)}</code>`).join('') || '—';
     return `<tr>
-      <td class="text-muted small">#${s.id}</td>
-      <td class="small">${s.ts}</td>
-      <td class="small">${s.vehicle_label || '—'}</td>
+      <td class="text-muted small">#${esc(s.id)}</td>
+      <td class="small">${esc(s.ts)}</td>
+      <td class="small">${esc(s.vehicle_label || '—')}</td>
       <td>${dtcs}</td>
       <td>${sevBadge(s.urgency)}</td>
-      <td class="text-muted small">${s.km || '—'}</td>
+      <td class="text-muted small">${esc(s.km || '—')}</td>
     </tr>`;
   }).join('');
 }
@@ -430,9 +518,9 @@ function searchDTC(val) {
     document.getElementById('dtc-search-results').innerHTML = results.length
       ? results.map(d => `
           <div class="d-flex align-items-center gap-2 py-2 border-bottom border-secondary"
-               style="cursor:pointer" onclick="showDTCInfo('${d.code}')">
-            <code>${d.code}</code>
-            <span class="small flex-grow-1">${d.description}</span>
+               style="cursor:pointer" data-code="${esc(d.code)}" onclick="showDTCInfo(this.dataset.code)">
+            <code>${esc(d.code)}</code>
+            <span class="small flex-grow-1">${esc(d.description)}</span>
             ${sevBadge(d.severity)}
           </div>`).join('')
       : '<div class="text-muted small mt-2">Nenhum resultado.</div>';
@@ -447,10 +535,10 @@ async function lookupDTC() {
 async function showDTCInfo(code) {
   document.getElementById('dtc-input').value = code;
   document.getElementById('dtc-search-results').innerHTML = '';
-  const res = await fetch(`/api/dtc/${code}`);
+  const res = await fetch(`/api/dtc/${encodeURIComponent(code)}`);
   const el = document.getElementById('dtc-result');
   if (!res.ok) {
-    el.innerHTML = `<div class="alert alert-secondary">DTC ${code} não encontrado na base local.</div>`;
+    el.innerHTML = `<div class="alert alert-secondary">DTC ${esc(code)} não encontrado na base local.</div>`;
     return;
   }
   const d = await res.json();
@@ -458,14 +546,14 @@ async function showDTCInfo(code) {
   el.innerHTML = `
     <div class="card mt-2" style="border-left:3px solid var(--bs-${color})">
       <div class="card-header d-flex align-items-center gap-2 py-2">
-        <code class="fs-5">${d.code}</code>
+        <code class="fs-5">${esc(d.code)}</code>
         ${sevBadge(d.severity)}
-        <span class="text-muted small ms-auto">${d.system}</span>
+        <span class="text-muted small ms-auto">${esc(d.system)}</span>
       </div>
       <div class="card-body">
-        <p class="mb-3">${d.description}</p>
+        <p class="mb-3">${esc(d.description)}</p>
         <div class="text-muted small mb-1">Causas prováveis:</div>
-        <ul class="mb-0 small">${(d.causes||[]).map(c=>`<li>${c}</li>`).join('')}</ul>
+        <ul class="mb-0 small">${(d.causes||[]).map(c=>`<li>${esc(c)}</li>`).join('')}</ul>
       </div>
     </div>`;
 }
@@ -481,6 +569,7 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
 });
 
 loadDash();
+loadPorts();
 </script>
 </body>
 </html>

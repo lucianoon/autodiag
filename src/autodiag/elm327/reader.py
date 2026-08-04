@@ -2,6 +2,7 @@
 ELM327 reader via pyserial.
 Suporta USB, Bluetooth serial e Wi-Fi (TCP) em Windows, Linux e macOS.
 """
+
 import glob
 import re
 import socket
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import serial
-from serial.tools import list_ports
+from serial.tools import list_ports as serial_list_ports
 
 
 class ELM327Error(ConnectionError):
@@ -19,14 +20,21 @@ class ELM327Error(ConnectionError):
 
 @dataclass
 class LivePIDs:
+    engine_load_pct: float | None = None
     rpm: int | None = None
     speed_kmh: int | None = None
     coolant_temp_c: int | None = None
+    timing_advance_deg: float | None = None
+    fuel_pressure_kpa: int | None = None
     throttle_pct: float | None = None
     maf_g_s: float | None = None
+    commanded_equivalence_ratio: float | None = None
     fuel_trim_short_b1: float | None = None
     fuel_trim_long_b1: float | None = None
     o2_b1s1_v: float | None = None
+    o2_b1s2_v: float | None = None
+    o2_b2s1_v: float | None = None
+    o2_b2s2_v: float | None = None
     intake_temp_c: int | None = None
     fuel_level_pct: float | None = None
 
@@ -37,50 +45,108 @@ class LivePIDs:
 @dataclass
 class DTCRecord:
     code: str
-    status: str = "stored"  # stored | pending
+    status: str = "stored"  # stored | pending | permanent
 
 
-# Identificadores comuns de adaptadores ELM327 (chipsets USB-serial e nomes Bluetooth)
+@dataclass
+class MonitorStatus:
+    mil_on: bool | None = None
+    dtc_count: int | None = None
+    raw: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"raw": self.raw}
+        if self.mil_on is not None:
+            data["mil_on"] = self.mil_on
+        if self.dtc_count is not None:
+            data["dtc_count"] = self.dtc_count
+        return data
+
+
 _PORT_KEYWORDS = (
-    "obdii", "obd-ii", "obd", "elm327", "elm",
-    "ch340", "ch341", "cp210", "ftdi", "pl2303",
-    "usb serial", "usb-serial", "usbserial",
+    "obdii",
+    "obd-ii",
+    "obd",
+    "elm327",
+    "elm",
+    "ch340",
+    "ch341",
+    "cp210",
+    "ftdi",
+    "pl2303",
+    "usb serial",
+    "usb-serial",
+    "usbserial",
 )
 
 
-def _auto_detect_port() -> str | None:
-    """Procura um adaptador ELM327 nas portas seriais do sistema (Windows, Linux e macOS)."""
-    for p in sorted(list_ports.comports(), key=lambda p: p.device):
+def list_ports() -> list[str]:
+    ports: list[str] = []
+    for port in sorted(serial_list_ports.comports(), key=lambda item: item.device):
         haystack = " ".join(
-            s for s in (p.device, p.description, p.manufacturer) if s
+            part for part in (port.device, port.description, port.manufacturer) if part
         ).lower()
-        if any(k in haystack for k in _PORT_KEYWORDS):
-            return p.device
-    # Bluetooth pareado nem sempre aparece em comports: macOS expõe /dev/cu.*,
-    # Linux expõe /dev/rfcomm* após o bind
-    candidates = (
-        glob.glob("/dev/cu.OBDII*")
+        if any(keyword in haystack for keyword in _PORT_KEYWORDS):
+            ports.append(port.device)
+
+    ports.extend(
+        glob.glob("/dev/cu.usbserial-*")
+        + glob.glob("/dev/cu.SLAB_USBtoUART*")
+        + glob.glob("/dev/cu.usbmodem*")
+        + glob.glob("/dev/cu.OBDII*")
         + glob.glob("/dev/cu.OBD*")
         + glob.glob("/dev/rfcomm*")
     )
-    return candidates[0] if candidates else None
+    return sorted(set(ports))
 
 
-def _decode_dtcs(raw: str) -> list[DTCRecord]:
-    PREFIX = {"0": "P0", "1": "P1", "2": "P2", "3": "P3",
-               "4": "C0", "5": "C1", "6": "C2", "7": "C3",
-               "8": "B0", "9": "B1", "A": "B2", "B": "B3",
-               "C": "U0", "D": "U1", "E": "U2", "F": "U3"}
-    bytes_ = re.sub(r"\s+", "", raw.upper().replace("43", "", 1).strip()).replace("NO DATA", "")
+def _auto_detect_port() -> str | None:
+    ports = list_ports()
+    return ports[0] if ports else None
+
+
+def _decode_dtcs(
+    raw: str,
+    *,
+    status: str = "stored",
+    response_prefix: str = "43",
+) -> list[DTCRecord]:
+    prefix_map = {
+        "0": "P0",
+        "1": "P1",
+        "2": "P2",
+        "3": "P3",
+        "4": "C0",
+        "5": "C1",
+        "6": "C2",
+        "7": "C3",
+        "8": "B0",
+        "9": "B1",
+        "A": "B2",
+        "B": "B3",
+        "C": "U0",
+        "D": "U1",
+        "E": "U2",
+        "F": "U3",
+    }
+    bytes_ = re.sub(r"\s+", "", raw.upper().strip()).replace("NO DATA", "")
+    bytes_ = bytes_.replace(response_prefix.upper(), "", 1)
     dtcs = []
-    for i in range(0, len(bytes_) - 2, 4):
-        chunk = bytes_[i:i+4]
+    for index in range(0, len(bytes_) - 2, 4):
+        chunk = bytes_[index : index + 4]
         if len(chunk) < 4 or chunk == "0000":
             continue
-        prefix = PREFIX.get(chunk[0], "P?")
-        code = prefix + chunk[1:]
-        dtcs.append(DTCRecord(code=code.upper()))
+        code = prefix_map.get(chunk[0], "P?") + chunk[1:]
+        dtcs.append(DTCRecord(code=code.upper(), status=status))
     return dtcs
+
+
+def _extract_payload(raw: str, response_tag: str) -> str | None:
+    compact = re.sub(r"\s+", "", raw.upper())
+    index = compact.find(response_tag.upper())
+    if index == -1:
+        return None
+    return compact[index + len(response_tag) :]
 
 
 class ELM327Reader:
@@ -99,8 +165,6 @@ class ELM327Reader:
         self._ser: serial.Serial | None = None
         self._sock: socket.socket | None = None
 
-    # ── conexão ──────────────────────────────────────────────────
-
     def connect(self) -> bool:
         if self._wifi_host:
             return self._connect_wifi()
@@ -109,8 +173,8 @@ class ELM327Reader:
             raise ELM327Error("Nenhuma porta ELM327 encontrada. Especifique com --port.")
         try:
             self._ser = serial.Serial(port, baudrate=self.BAUD, timeout=self.TIMEOUT)
-        except (serial.SerialException, OSError) as e:
-            raise ELM327Error(f"Falha ao abrir a porta {port}: {e}") from e
+        except (serial.SerialException, OSError) as exc:
+            raise ELM327Error(f"Falha ao abrir a porta {port}: {exc}") from exc
         return self._init_elm()
 
     def _connect_wifi(self) -> bool:
@@ -118,21 +182,21 @@ class ELM327Reader:
             self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._sock.settimeout(self.TIMEOUT)
             self._sock.connect((self._wifi_host, self._wifi_port))
-        except OSError as e:
+        except OSError as exc:
             raise ELM327Error(
-                f"Falha ao conectar em {self._wifi_host}:{self._wifi_port}: {e}"
-            ) from e
+                f"Falha ao conectar em {self._wifi_host}:{self._wifi_port}: {exc}"
+            ) from exc
         return self._init_elm()
 
     def _init_elm(self) -> bool:
         self._send_raw("ATZ\r", wait=1.5)
-        self._cmd("ATE0")   # echo off
-        self._cmd("ATL0")   # linefeeds off
-        self._cmd("ATS0")   # spaces off
-        self._cmd("ATH0")   # headers off
-        self._cmd("ATSP0")  # protocol auto
-        r = self._cmd("0100")  # check connectivity
-        return "UNABLE" not in r and "ERROR" not in r
+        self._cmd("ATE0")
+        self._cmd("ATL0")
+        self._cmd("ATS0")
+        self._cmd("ATH0")
+        self._cmd("ATSP0")
+        response = self._cmd("0100")
+        return "UNABLE" not in response and "ERROR" not in response
 
     def disconnect(self) -> None:
         if self._ser and self._ser.is_open:
@@ -147,8 +211,6 @@ class ELM327Reader:
 
     def __exit__(self, *exc: object) -> None:
         self.disconnect()
-
-    # ── leitura ───────────────────────────────────────────────────
 
     def get_vin(self) -> str:
         raw = self._cmd("0902")
@@ -165,77 +227,135 @@ class ELM327Reader:
             return []
         return _decode_dtcs(raw)
 
+    def get_pending_dtcs(self) -> list[DTCRecord]:
+        raw = self._cmd("07")
+        if "NO DATA" in raw or "NODATA" in raw:
+            return []
+        return _decode_dtcs(raw, status="pending", response_prefix="47")
+
+    def get_permanent_dtcs(self) -> list[DTCRecord]:
+        raw = self._cmd("0A")
+        if "NO DATA" in raw or "NODATA" in raw:
+            return []
+        return _decode_dtcs(raw, status="permanent", response_prefix="4A")
+
+    def get_monitor_status(self) -> MonitorStatus:
+        raw = self._cmd("0101")
+        payload = _extract_payload(raw, "4101")
+        status = MonitorStatus(raw=raw)
+        if payload and len(payload) >= 2:
+            a = int(payload[0:2], 16)
+            status.mil_on = bool(a & 0x80)
+            status.dtc_count = a & 0x7F
+        return status
+
+    def get_control_module_voltage(self) -> float | None:
+        raw = self._cmd("ATRV")
+        match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*V", raw.upper())
+        return float(match.group(1)) if match else None
+
+    def get_supported_pids(self) -> list[str]:
+        raw = self._cmd("0100")
+        payload = _extract_payload(raw, "4100")
+        if not payload or len(payload) < 8:
+            return []
+        bits = int(payload[:8], 16)
+        supported = []
+        for index in range(32):
+            if bits & (1 << (31 - index)):
+                supported.append(f"{index + 1:02X}")
+        return supported
+
     def clear_dtcs(self) -> bool:
-        r = self._cmd("04")
-        return "44" in r or "OK" in r.upper()
+        response = self._cmd("04")
+        return "44" in response or "OK" in response.upper()
 
     def get_live_pids(self) -> LivePIDs:
-        p = LivePIDs()
+        pids = LivePIDs()
 
         def _query(pid: str) -> str:
             return self._cmd(f"01{pid}")
 
         def _parse(raw: str, pid: str) -> str | None:
-            raw = raw.upper().replace(" ", "")
+            compact = raw.upper().replace(" ", "")
             tag = f"41{pid.upper()}"
-            idx = raw.find(tag)
-            if idx == -1:
+            index = compact.find(tag)
+            if index == -1:
                 return None
-            return raw[idx + len(tag):]
+            return compact[index + len(tag) :]
 
-        # RPM — PID 0C — formula: (A*256+B)/4
-        r = _parse(_query("0C"), "0C")
-        if r and len(r) >= 4:
-            p.rpm = (int(r[0:2], 16) * 256 + int(r[2:4], 16)) // 4
+        response = _parse(_query("04"), "04")
+        if response and len(response) >= 2:
+            pids.engine_load_pct = round(int(response[0:2], 16) * 100 / 255, 1)
 
-        # Velocidade — PID 0D — A km/h
-        r = _parse(_query("0D"), "0D")
-        if r and len(r) >= 2:
-            p.speed_kmh = int(r[0:2], 16)
+        response = _parse(_query("0C"), "0C")
+        if response and len(response) >= 4:
+            pids.rpm = (int(response[0:2], 16) * 256 + int(response[2:4], 16)) // 4
 
-        # Temperatura — PID 05 — A-40
-        r = _parse(_query("05"), "05")
-        if r and len(r) >= 2:
-            p.coolant_temp_c = int(r[0:2], 16) - 40
+        response = _parse(_query("0D"), "0D")
+        if response and len(response) >= 2:
+            pids.speed_kmh = int(response[0:2], 16)
 
-        # Borboleta — PID 11 — A*100/255
-        r = _parse(_query("11"), "11")
-        if r and len(r) >= 2:
-            p.throttle_pct = round(int(r[0:2], 16) * 100 / 255, 1)
+        response = _parse(_query("05"), "05")
+        if response and len(response) >= 2:
+            pids.coolant_temp_c = int(response[0:2], 16) - 40
 
-        # MAF — PID 10 — (A*256+B)/100 g/s
-        r = _parse(_query("10"), "10")
-        if r and len(r) >= 4:
-            p.maf_g_s = round((int(r[0:2], 16) * 256 + int(r[2:4], 16)) / 100, 2)
+        response = _parse(_query("0E"), "0E")
+        if response and len(response) >= 2:
+            pids.timing_advance_deg = round(int(response[0:2], 16) / 2 - 64, 1)
 
-        # Short fuel trim B1 — PID 06 — (A-128)*100/128 %
-        r = _parse(_query("06"), "06")
-        if r and len(r) >= 2:
-            p.fuel_trim_short_b1 = round((int(r[0:2], 16) - 128) * 100 / 128, 1)
+        response = _parse(_query("0A"), "0A")
+        if response and len(response) >= 2:
+            pids.fuel_pressure_kpa = int(response[0:2], 16) * 3
 
-        # Long fuel trim B1 — PID 07
-        r = _parse(_query("07"), "07")
-        if r and len(r) >= 2:
-            p.fuel_trim_long_b1 = round((int(r[0:2], 16) - 128) * 100 / 128, 1)
+        response = _parse(_query("11"), "11")
+        if response and len(response) >= 2:
+            pids.throttle_pct = round(int(response[0:2], 16) * 100 / 255, 1)
 
-        # O2 B1S1 — PID 14 — A/200 V
-        r = _parse(_query("14"), "14")
-        if r and len(r) >= 2:
-            p.o2_b1s1_v = round(int(r[0:2], 16) / 200, 2)
+        response = _parse(_query("10"), "10")
+        if response and len(response) >= 4:
+            pids.maf_g_s = round((int(response[0:2], 16) * 256 + int(response[2:4], 16)) / 100, 2)
 
-        # Temperatura do ar de admissão — PID 0F — A-40
-        r = _parse(_query("0F"), "0F")
-        if r and len(r) >= 2:
-            p.intake_temp_c = int(r[0:2], 16) - 40
+        response = _parse(_query("44"), "44")
+        if response and len(response) >= 4:
+            pids.commanded_equivalence_ratio = round(
+                (int(response[0:2], 16) * 256 + int(response[2:4], 16)) / 32768,
+                3,
+            )
 
-        # Nível de combustível — PID 2F — A*100/255
-        r = _parse(_query("2F"), "2F")
-        if r and len(r) >= 2:
-            p.fuel_level_pct = round(int(r[0:2], 16) * 100 / 255, 1)
+        response = _parse(_query("06"), "06")
+        if response and len(response) >= 2:
+            pids.fuel_trim_short_b1 = round((int(response[0:2], 16) - 128) * 100 / 128, 1)
 
-        return p
+        response = _parse(_query("07"), "07")
+        if response and len(response) >= 2:
+            pids.fuel_trim_long_b1 = round((int(response[0:2], 16) - 128) * 100 / 128, 1)
 
-    # ── interno ───────────────────────────────────────────────────
+        response = _parse(_query("14"), "14")
+        if response and len(response) >= 2:
+            pids.o2_b1s1_v = round(int(response[0:2], 16) / 200, 2)
+
+        response = _parse(_query("15"), "15")
+        if response and len(response) >= 2:
+            pids.o2_b1s2_v = round(int(response[0:2], 16) / 200, 2)
+
+        response = _parse(_query("18"), "18")
+        if response and len(response) >= 2:
+            pids.o2_b2s1_v = round(int(response[0:2], 16) / 200, 2)
+
+        response = _parse(_query("19"), "19")
+        if response and len(response) >= 2:
+            pids.o2_b2s2_v = round(int(response[0:2], 16) / 200, 2)
+
+        response = _parse(_query("0F"), "0F")
+        if response and len(response) >= 2:
+            pids.intake_temp_c = int(response[0:2], 16) - 40
+
+        response = _parse(_query("2F"), "2F")
+        if response and len(response) >= 2:
+            pids.fuel_level_pct = round(int(response[0:2], 16) * 100 / 255, 1)
+
+        return pids
 
     def _cmd(self, cmd: str, wait: float = 0.3, retries: int = 1) -> str:
         response = self._send_raw(cmd + "\r", wait=wait)
@@ -250,7 +370,6 @@ class ELM327Reader:
         if self._ser:
             self._ser.reset_input_buffer()
             self._ser.write(raw)
-            # lê até o prompt ">" do ELM327 ou até estourar o prazo
             deadline = time.monotonic() + max(wait, self.TIMEOUT)
             response = b""
             while time.monotonic() < deadline:
@@ -262,6 +381,7 @@ class ELM327Reader:
                 else:
                     time.sleep(0.02)
             return response.decode("ascii", errors="ignore").strip().replace(">", "")
+
         if self._sock:
             self._sock.sendall(raw)
             time.sleep(wait)
@@ -277,4 +397,5 @@ class ELM327Reader:
             except TimeoutError:
                 pass
             return b"".join(chunks).decode("ascii", errors="ignore").strip().replace(">", "")
+
         return ""

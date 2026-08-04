@@ -7,7 +7,7 @@ from rich.text import Text
 
 from autodiag.core.dtc import lookup, severity_color
 from autodiag.core.vehicle import VehicleProfile
-from autodiag.elm327.reader import DTCRecord, LivePIDs
+from autodiag.elm327.reader import DTCRecord, LivePIDs, MonitorStatus
 
 console = Console()
 
@@ -46,6 +46,7 @@ def dtcs_table(dtcs: list[DTCRecord]):
         return
     t = Table(title=f"{len(dtcs)} DTC(s) encontrado(s)", box=box.SIMPLE)
     t.add_column("Código", style="bold", width=8)
+    t.add_column("Status", width=12)
     t.add_column("Descrição")
     t.add_column("Sistema", width=18)
     t.add_column("Urgência", width=12)
@@ -55,7 +56,31 @@ def dtcs_table(dtcs: list[DTCRecord]):
         system = info.system if info else "—"
         sev = info.severity if info else "informativo"
         color = severity_color(sev)
-        t.add_row(dtc.code, desc, system, f"[{color}]{sev}[/]")
+        t.add_row(dtc.code, dtc.status, desc, system, f"[{color}]{sev}[/]")
+    console.print(t)
+
+
+def vehicle_status_panel(
+    battery_voltage: float | None,
+    monitor_status: MonitorStatus,
+    supported_pids: list[str],
+):
+    t = Table(title="Status OBD", box=box.SIMPLE)
+    t.add_column("Item", style="dim")
+    t.add_column("Valor", justify="right")
+
+    voltage = f"{battery_voltage:.1f} V" if battery_voltage is not None else "—"
+    if monitor_status.mil_on is None:
+        mil = "—"
+    else:
+        mil = "acesa" if monitor_status.mil_on else "apagada"
+    dtc_count = str(monitor_status.dtc_count) if monitor_status.dtc_count is not None else "—"
+    pids = f"{len(supported_pids)} PIDs" if supported_pids else "—"
+
+    t.add_row("Tensão módulo/adaptador", voltage)
+    t.add_row("MIL / luz de injeção", mil)
+    t.add_row("DTCs reportados pela ECU", dtc_count)
+    t.add_row("PIDs suportados", pids)
     console.print(t)
 
 
@@ -75,15 +100,22 @@ def pids_table(pids: LivePIDs):
             st, sc = "✗", "red"
         t.add_row(name, f"{val} {unit}", f"[{sc}]{st}[/]")
 
+    row("Carga calculada",       pids.engine_load_pct,  "%")
     row("RPM",                   pids.rpm,              "rpm", 600, 5500)
     row("Velocidade",            pids.speed_kmh,        "km/h")
     row("Temperatura motor",     pids.coolant_temp_c,   "°C",  None, 105)
     row("Temperatura admissão",  pids.intake_temp_c,    "°C")
+    row("Avanço de ignição",     pids.timing_advance_deg, "°")
+    row("Pressão combustível",   pids.fuel_pressure_kpa, "kPa")
     row("Borboleta",             pids.throttle_pct,     "%")
     row("MAF",                   pids.maf_g_s,          "g/s", 2.0, None)
+    row("Lambda comandada",      pids.commanded_equivalence_ratio, "λ")
     row("Fuel trim curto B1",    pids.fuel_trim_short_b1, "%", None, 15)
     row("Fuel trim longo B1",    pids.fuel_trim_long_b1,  "%", None, 10)
     row("O2 B1S1",               pids.o2_b1s1_v,        "V",  0.1, None)
+    row("O2 B1S2",               pids.o2_b1s2_v,        "V",  0.1, None)
+    row("O2 B2S1",               pids.o2_b2s1_v,        "V",  0.1, None)
+    row("O2 B2S2",               pids.o2_b2s2_v,        "V",  0.1, None)
     row("Nível combustível",     pids.fuel_level_pct,   "%",  10,  None)
     console.print(t)
 

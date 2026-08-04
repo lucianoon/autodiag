@@ -7,7 +7,7 @@ lambda presa em tensão baixa — o quadro clássico de entrada falsa de ar.
 """
 import random
 
-from autodiag.elm327.reader import DTCRecord, LivePIDs
+from autodiag.elm327.reader import DTCRecord, LivePIDs, MonitorStatus
 
 SIM_VIN = "9BWAB45U0KP042788"  # 9BW = Volkswagen Brasil, K = 2019
 
@@ -43,6 +43,37 @@ class SimulatedELM327:
 
     def get_dtcs(self) -> list[DTCRecord]:
         return list(self._dtcs)
+
+    def get_pending_dtcs(self) -> list[DTCRecord]:
+        return []
+
+    def get_permanent_dtcs(self) -> list[DTCRecord]:
+        return []
+
+    def get_monitor_status(self) -> MonitorStatus:
+        return MonitorStatus(
+            mil_on=bool(self._dtcs),
+            dtc_count=len(self._dtcs),
+            raw="SIMULATED",
+        )
+
+    def get_control_module_voltage(self) -> float | None:
+        return 12.5
+
+    def get_supported_pids(self) -> list[str]:
+        return [
+            "04",
+            "05",
+            "06",
+            "07",
+            "0C",
+            "0D",
+            "0F",
+            "10",
+            "11",
+            "14",
+            "2F",
+        ]
 
     def clear_dtcs(self) -> bool:
         self._dtcs = []

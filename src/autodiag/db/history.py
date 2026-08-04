@@ -1,9 +1,17 @@
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 DB_PATH = Path.home() / ".autodiag" / "history.db"
+
+
+def _default_db_path() -> Path:
+    custom_path = os.environ.get("AUTODIAG_DB_PATH")
+    if custom_path:
+        return Path(custom_path).expanduser()
+    return DB_PATH
 
 
 @dataclass
@@ -29,7 +37,8 @@ class Session:
 
 
 class History:
-    def __init__(self, path: Path = DB_PATH):
+    def __init__(self, path: Path | None = None):
+        path = path or _default_db_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         self._con = sqlite3.connect(str(path))
         self._con.row_factory = sqlite3.Row

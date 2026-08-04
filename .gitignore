@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .venv/
 dist/
+build/
 *.egg-info/
 .DS_Store
 autodiag.db

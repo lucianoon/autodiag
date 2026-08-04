@@ -7,43 +7,38 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path.home() / ".autodiag" / ".env")
+load_dotenv(".env")
 
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from autodiag.core.diagnosis import infer_urgency
 from autodiag.core.dtc import DTC_DATABASE, lookup
 from autodiag.core.vehicle import VehicleProfile, decode_vin_local
 from autodiag.db.history import History, Session
 from autodiag.elm327 import create_reader
-from autodiag.elm327.reader import DTCRecord, LivePIDs
+from autodiag.elm327.reader import DTCRecord, list_ports
 
 app = FastAPI(title="AutoDiag")
 
 _STATIC = Path(__file__).parent / "static"
 
 
-def _infer_urgency(dtcs: list[DTCRecord], pids: LivePIDs) -> str:
-    CRITICAL = {"P0300","P0301","P0302","P0303","P0304","P0700","P0740",
-                "U0100","U0001","B0001","B0002","B1001","C0900"}
-    ATTENTION = {"P0101","P0171","P0172","P0174","P0175","P0401","P0506",
-                 "P0507","U0121","P0420","P0430","P0730","P0741"}
-    codes = {d.code for d in dtcs}
-    if codes & CRITICAL:
-        return "critico"
-    if pids.coolant_temp_c and pids.coolant_temp_c > 108:
-        return "critico"
-    if codes & ATTENTION:
-        return "atencao"
-    if pids.fuel_trim_short_b1 and abs(pids.fuel_trim_short_b1) > 15:
-        return "atencao"
-    if pids.maf_g_s is not None and pids.maf_g_s < 2.0:
-        return "atencao"
-    if dtcs:
-        return "atencao"
-    return "informativo"
+def _dtc_payload(dtcs: list[DTCRecord]) -> list[dict]:
+    payload = []
+    for dtc in dtcs:
+        info = lookup(dtc.code)
+        payload.append(
+            {
+                "code": dtc.code,
+                "status": dtc.status,
+                "description": info.description if info else "—",
+                "severity": info.severity if info else "informativo",
+                "system": info.system if info else "—",
+            }
+        )
+    return payload
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -60,13 +55,23 @@ async def api_history(limit: int = Query(10, ge=1, le=100)):
     return History().list(limit)
 
 
+@app.get("/api/ports")
+async def api_ports():
+    return {"ports": list_ports()}
+
+
 @app.get("/api/dtc/{code}")
 async def api_dtc(code: str):
     info = lookup(code.upper())
     if not info:
         return JSONResponse({"error": f"DTC {code.upper()} não encontrado"}, status_code=404)
-    return {"code": info.code, "description": info.description,
-            "severity": info.severity, "system": info.system, "causes": info.causes}
+    return {
+        "code": info.code,
+        "description": info.description,
+        "severity": info.severity,
+        "system": info.system,
+        "causes": info.causes,
+    }
 
 
 @app.get("/api/dtc")
@@ -76,8 +81,14 @@ async def api_dtc_search(q: str = Query("")):
     results = []
     for code, info in DTC_DATABASE.items():
         if q_up in code or q_lo in info.description.lower():
-            results.append({"code": info.code, "description": info.description,
-                            "severity": info.severity, "system": info.system})
+            results.append(
+                {
+                    "code": info.code,
+                    "description": info.description,
+                    "severity": info.severity,
+                    "system": info.system,
+                }
+            )
     return results[:20]
 
 
@@ -95,99 +106,109 @@ async def api_scan_stream(
         loop.call_soon_threadsafe(q.put_nowait, data)
 
     def run():
+        reader = create_reader(port=port, wifi_host=wifi, demo=demo)
         try:
             if demo:
                 send({"type": "status", "message": "Modo demo — adaptador ELM327 simulado"})
             else:
                 send({"type": "status", "message": "Conectando ao adaptador ELM327..."})
-            reader = create_reader(port=port, wifi_host=wifi, demo=demo)
+
             connected = reader.connect()
             if not connected:
-                send({"type": "error",
-                      "message": "Falha ao inicializar ELM327. Verifique a conexão."})
+                send(
+                    {
+                        "type": "error",
+                        "message": "Falha ao inicializar ELM327. Verifique a conexão.",
+                    }
+                )
                 return
             send({"type": "status", "message": "Adaptador conectado"})
 
-            # VIN
+            send({"type": "status", "message": "Coletando status do veículo..."})
+            battery_voltage = reader.get_control_module_voltage()
+            monitor_status = reader.get_monitor_status()
+            supported_pids = reader.get_supported_pids()
+            send(
+                {
+                    "type": "vehicle_status",
+                    "battery_voltage": battery_voltage,
+                    "monitor_status": monitor_status.as_dict(),
+                    "supported_pids": supported_pids,
+                }
+            )
+
             send({"type": "status", "message": "Lendo VIN..."})
             vin = reader.get_vin()
             vehicle = decode_vin_local(vin) if vin else VehicleProfile()
-            if vin and len(vin) == 17 and not demo:  # VIN sintético: não consultar a NHTSA
+            if vin and len(vin) == 17 and not demo:
                 try:
                     import httpx as _httpx
+
                     url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{vin}?format=json"
-                    res = _httpx.get(url, timeout=6.0).json().get("Results", [{}])[0]
-                    vehicle.make = res.get("Make") or vehicle.make
-                    vehicle.model = res.get("Model") or ""
-                    yr = res.get("ModelYear") or ""
-                    if yr.isdigit():
-                        vehicle.year = int(yr)
+                    result = _httpx.get(url, timeout=6.0).json().get("Results", [{}])[0]
+                    vehicle.make = result.get("Make") or vehicle.make
+                    vehicle.model = result.get("Model") or ""
+                    year = result.get("ModelYear") or ""
+                    if year.isdigit():
+                        vehicle.year = int(year)
                 except Exception:
                     pass
             send({"type": "vin", "vin": vin or "—", "vehicle": vehicle.label})
 
-            # DTCs
             send({"type": "status", "message": "Lendo DTCs..."})
             dtcs = reader.get_dtcs()
-            dtc_list = []
-            for d in dtcs:
-                info = lookup(d.code)
-                dtc_list.append({
-                    "code": d.code,
-                    "description": info.description if info else "—",
-                    "severity": info.severity if info else "informativo",
-                    "system": info.system if info else "—",
-                })
-            send({"type": "dtcs", "dtcs": dtc_list})
+            pending_dtcs = reader.get_pending_dtcs()
+            permanent_dtcs = reader.get_permanent_dtcs()
+            all_dtcs = dtcs + pending_dtcs + permanent_dtcs
+            send({"type": "dtcs", "dtcs": _dtc_payload(all_dtcs)})
 
-            # PIDs
             send({"type": "status", "message": "Lendo PIDs ao vivo..."})
             pids = reader.get_live_pids()
             send({"type": "pids", "pids": pids.as_dict()})
-            reader.disconnect()
 
-            urgency = _infer_urgency(dtcs, pids)
+            urgency = infer_urgency(all_dtcs, pids)
 
-            # IA
             analysis = ""
             if not no_ai:
                 from autodiag.agents.diagnostic import analyze, describe, is_configured
+
                 if is_configured():
                     send({"type": "status", "message": f"Analisando com {describe()}..."})
                     try:
-                        analysis = analyze(vehicle, dtcs, pids)
+                        analysis = analyze(vehicle, all_dtcs, pids)
                         send({"type": "analysis", "text": analysis})
                     except Exception as e:
                         send({"type": "warn", "message": f"Erro na análise IA: {e}"})
 
-            # Salvar
-            sid = History().save(Session(
-                id=None,
-                ts=datetime.now().strftime("%d/%m/%Y %H:%M"),
-                vin=vehicle.vin,
-                vehicle_label=vehicle.label,
-                dtc_codes=[d.code for d in dtcs],
-                urgency=urgency,
-                rpm=pids.rpm,
-                speed=pids.speed_kmh,
-                coolant_temp=pids.coolant_temp_c,
-                maf=pids.maf_g_s,
-                fuel_trim_short=pids.fuel_trim_short_b1,
-                fuel_trim_long=pids.fuel_trim_long_b1,
-                o2=pids.o2_b1s1_v,
-                diagnosis=analysis,
-                cost_min=0,
-                cost_max=0,
-                km=None,
-                notes="",
-            ))
+            sid = History().save(
+                Session(
+                    id=None,
+                    ts=datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    vin=vehicle.vin,
+                    vehicle_label=vehicle.label,
+                    dtc_codes=[d.code for d in all_dtcs],
+                    urgency=urgency,
+                    rpm=pids.rpm,
+                    speed=pids.speed_kmh,
+                    coolant_temp=pids.coolant_temp_c,
+                    maf=pids.maf_g_s,
+                    fuel_trim_short=pids.fuel_trim_short_b1,
+                    fuel_trim_long=pids.fuel_trim_long_b1,
+                    o2=pids.o2_b1s1_v,
+                    diagnosis=analysis,
+                    cost_min=0,
+                    cost_max=0,
+                    km=None,
+                    notes="",
+                )
+            )
             send({"type": "saved", "session_id": sid, "urgency": urgency})
-
         except ConnectionError as e:
             send({"type": "error", "message": str(e)})
         except Exception as e:
             send({"type": "error", "message": f"Erro inesperado: {e}"})
         finally:
+            reader.disconnect()
             loop.call_soon_threadsafe(q.put_nowait, None)
 
     threading.Thread(target=run, daemon=True).start()
