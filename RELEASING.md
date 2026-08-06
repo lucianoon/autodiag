@@ -1,21 +1,16 @@
 # Publicação
 
-O AutoDiag publica no PyPI por Trusted Publishing (OIDC). Não use token PyPI
-de longa duração no GitHub.
+O AutoDiag publica no PyPI pelo workflow `.github/workflows/release.yml`,
+que só executa quando uma GitHub Release é publicada. A autenticação atual é
+por **token de API** (secret `PYPI_API_TOKEN` em Settings → Secrets and
+variables → Actions).
 
-## Configuração única no PyPI
-
-No projeto `autodiag`, em **Manage → Publishing**, adicione um publisher:
-
-| Campo | Valor |
-|---|---|
-| Owner | `lucianoon` |
-| Repository | `autodiag` |
-| Workflow | `release.yml` |
-| Environment | `pypi` |
-
-O workflow fica em `.github/workflows/release.yml` e só executa quando uma
-GitHub Release é publicada.
+> Trusted Publishing (OIDC) é preferível por dispensar segredo de longa
+> duração; o passo a passo para voltar a ele está comentado no próprio
+> `release.yml` (remover o bloco `with:` e devolver `permissions:
+> id-token: write`, após cadastrar o publisher em pypi.org com
+> Owner `lucianoon`, Repository `autodiag`, Workflow `release.yml`,
+> Environment `pypi`).
 
 ## Checklist de versão
 

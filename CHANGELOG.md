@@ -27,6 +27,10 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   (coluna `readiness`, migração incremental) e incluído no relatório HTML.
 - No modo demo, apagar os DTCs e escanear de novo reproduz o cenário de
   adulteração e dispara a detecção — o fluxo inteiro é testável sem hardware.
+- **Infraestrutura de comunidade**: CONTRIBUTING.md, matriz de
+  compatibilidade ([docs/compatibilidade.md](docs/compatibilidade.md)),
+  formulários de issue (relato de compatibilidade, bug, feature), Discussions
+  habilitadas e primeiras issues `good first issue`.
 - **Interface web instalável (PWA)**: manifest e ícone servidos em
   `/static`, `theme-color` e favicon SVG — no celular, "Adicionar à tela
   inicial" abre o AutoDiag em janela própria apontando para o notebook ou

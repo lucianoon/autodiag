@@ -1,0 +1,65 @@
+name: "🚗 Relato de compatibilidade"
+description: Testou o AutoDiag em um veículo real? Conte como foi — funcionando ou não.
+title: "[Compat] Marca Modelo Ano"
+labels: ["compatibilidade"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado! Relatos reais são a contribuição mais valiosa para o projeto.
+        Preencha o que souber — campos incompletos não invalidam o relato.
+  - type: input
+    id: veiculo
+    attributes:
+      label: Veículo
+      placeholder: "ex.: Chevrolet Onix 1.0 Turbo"
+    validations:
+      required: true
+  - type: input
+    id: ano
+    attributes:
+      label: Ano-modelo
+      placeholder: "ex.: 2021"
+    validations:
+      required: true
+  - type: input
+    id: adaptador
+    attributes:
+      label: Adaptador ELM327
+      placeholder: "ex.: ELM327 v1.5 USB (chipset CH340), comprado na loja X"
+    validations:
+      required: true
+  - type: dropdown
+    id: conexao
+    attributes:
+      label: Tipo de conexão
+      options:
+        - USB
+        - Bluetooth (serial)
+        - Wi-Fi
+    validations:
+      required: true
+  - type: checkboxes
+    id: funcionou
+    attributes:
+      label: O que funcionou?
+      options:
+        - label: Leitura de DTCs (códigos de falha)
+        - label: PIDs ao vivo (RPM, temperatura etc.)
+        - label: Leitura do VIN
+        - label: Prontidão dos monitores (readiness)
+        - label: Freeze frame
+        - label: Limpeza de DTCs
+        - label: Nada funcionou
+  - type: textarea
+    id: detalhes
+    attributes:
+      label: Detalhes e observações
+      description: Erros exibidos, PIDs ausentes, tempo de conexão, sistema operacional, versão (`pip show autodiag`).
+      placeholder: "ex.: VIN veio vazio; RPM e temperatura OK; Windows 11, autodiag 0.3.0"
+  - type: textarea
+    id: saida
+    attributes:
+      label: Saída do terminal (opcional)
+      description: Cole a saída relevante do `autodiag scan`. Remova o VIN se não quiser publicá-lo.
+      render: text

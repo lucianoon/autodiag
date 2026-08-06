@@ -1,0 +1,21 @@
+name: "💡 Sugestão de feature"
+description: Uma ideia para melhorar o AutoDiag.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Que problema isso resolve?
+      description: Descreva o cenário real antes da solução — quem sente essa dor e quando.
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Solução proposta
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas (opcional)

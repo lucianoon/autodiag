@@ -231,10 +231,10 @@ uv run ruff check .
 uv run mypy
 ```
 
-Testes, lint e type-check rodam em CI (GitHub Actions, Ubuntu, Python 3.12)
-a cada push e pull request.
+Testes, lint e type-check rodam em CI (GitHub Actions, Ubuntu e Windows,
+Python 3.12) a cada push e pull request.
 
-O processo de versão e publicação por OIDC está documentado em
+O processo de versão e publicação está documentado em
 [`RELEASING.md`](RELEASING.md).
 
 ## Limitações e segurança
@@ -247,6 +247,16 @@ O processo de versão e publicação por OIDC está documentado em
   adaptadores ELM327 e veículos reais.
 - A análise por LLM é opcional e nunca deve ser usada como única base para uma
   decisão de segurança.
+
+## Comunidade e contribuição
+
+- **Testou em um carro real?** [Abra um relato de compatibilidade](https://github.com/lucianoon/autodiag/issues/new?template=compatibilidade.yml)
+  — funcionando ou não, leva 2 minutos e alimenta a
+  [matriz de compatibilidade](docs/compatibilidade.md). É a contribuição mais
+  valiosa para o projeto.
+- **Quer contribuir com código?** Veja o [CONTRIBUTING.md](CONTRIBUTING.md) e
+  as issues [`good first issue`](https://github.com/lucianoon/autodiag/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+- **Dúvidas e ideias:** [Discussions](https://github.com/lucianoon/autodiag/discussions).
 
 ## Licença
 
