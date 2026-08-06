@@ -60,6 +60,11 @@
 <nav class="navbar px-4 py-2">
   <span class="fw-bold" style="color:#58a6ff; font-size:1.1rem; letter-spacing:.5px;">◈ AutoDiag OBD2</span>
   <span class="text-muted small" id="last-scan-label"></span>
+  <div class="ms-auto d-flex gap-2 align-items-center">
+    <button class="btn btn-outline-secondary btn-sm" onclick="openBranding()">⚙ Branding</button>
+    <a class="btn btn-outline-secondary btn-sm" href="#" id="help-onboard-link"
+       data-bs-toggle="modal" data-bs-target="#helpModal">❔ Guia rápido</a>
+  </div>
 </nav>
 
 <div class="container-fluid px-4 py-3" style="max-width:1200px">
@@ -68,6 +73,7 @@
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-dash">Dashboard</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-scan">Scan</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-hist">Histórico</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-evol">Evolução</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-dtc">DTC</a></li>
   </ul>
 
@@ -113,8 +119,11 @@
                   </div>
                 </div>
                 <div class="col-md-3">
-                  <button class="btn btn-primary btn-sm w-100" id="scan-btn" onclick="startScan()">
+                  <button class="btn btn-primary btn-sm w-100 mb-1" id="scan-btn" onclick="startScan()">
                     ▶ Iniciar Scan
+                  </button>
+                  <button class="btn btn-outline-info btn-sm w-100" id="scan-btn-live" onclick="startLiveCapture(60)">
+                    📊 Gravar 60s (live PIDs)
                   </button>
                 </div>
               </div>
@@ -167,6 +176,45 @@
           </div>
         </div>
 
+        <div class="col-md-6" id="scan-freeze-card" style="display:none">
+          <div class="card h-100">
+            <div class="card-header small text-muted py-2">❄ Freeze Frame — momento do DTC</div>
+            <div class="card-body p-0" id="scan-freeze-body"></div>
+          </div>
+        </div>
+
+        <div class="col-12" id="scan-live-card" style="display:none">
+          <div class="card">
+            <div class="card-header small text-muted py-2 d-flex justify-content-between">
+              <span>📊 Captura contínua — <span id="scan-live-counter">0</span>/60s</span>
+              <button class="btn btn-outline-secondary btn-sm py-0" onclick="stopLiveCapture()">Parar</button>
+            </div>
+            <div class="card-body" id="scan-live-body">
+              <svg id="scan-live-svg" viewBox="0 0 600 240" preserveAspectRatio="none"
+                width="100%" height="240" style="background:#0b1220">
+                <defs>
+                  <pattern id="g" width="30" height="30" patternUnits="userSpaceOnUse">
+                    <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1f2a44" stroke-width="0.5"/>
+                  </pattern>
+                </defs>
+                <rect width="600" height="240" fill="url(#g)"/>
+                <g id="scan-live-series"></g>
+                <g id="scan-live-axis" font-size="10" fill="#666">
+                  <text x="2" y="10">RPM / Coolant (°C)</text>
+                  <text x="302" y="10">MAF (g/s) / FT curto B1 (%)</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12" id="scan-triage-card" style="display:none">
+          <div class="card">
+            <div class="card-header small text-muted py-2">Triagem guiada</div>
+            <div class="card-body p-3" id="scan-triage-body"></div>
+          </div>
+        </div>
+
         <div class="col-12" id="scan-analysis-card" style="display:none">
           <div class="card">
             <div class="card-header small text-muted py-2">Análise IA (Claude)</div>
@@ -186,11 +234,68 @@
           <table class="table table-sm table-hover mb-0" id="hist-table">
             <thead>
               <tr>
-                <th>#</th><th>Data</th><th>Veículo</th><th>DTCs</th><th>Urgência</th><th>KM</th>
+                <th>#</th><th>Data</th><th>Veículo</th><th>DTCs</th><th>Urgência</th>
+                <th>KM</th><th>Tags/Notas</th><th></th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Evolução ───────────────────────────────────────── -->
+    <div class="tab-pane fade" id="tab-evol">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label text-muted small mb-1">Selecione o veículo</label>
+          <select class="form-select" id="evol-vin-select" onchange="loadVehicleEvolution(this.value)">
+            <option value="">— carregando veículos —</option>
+          </select>
+        </div>
+        <div class="col-md-6 d-flex align-items-end justify-content-end gap-2 flex-wrap">
+          <div id="evol-vehicle-meta" class="small text-muted me-auto"></div>
+          <a class="btn btn-outline-secondary btn-sm" id="evol-export-json"
+             style="display:none" download>⤓ JSON</a>
+          <a class="btn btn-outline-secondary btn-sm" id="evol-export-csv"
+             style="display:none" download>⤓ CSV</a>
+        </div>
+      </div>
+
+      <div id="evol-empty" class="text-center text-muted py-5">
+        Selecione um veículo acima para visualizar sua linha do tempo e tendências.
+      </div>
+
+      <div id="evol-content" style="display:none">
+        <div class="card mb-3" id="evol-alerts-card" style="display:none">
+          <div class="card-header small text-muted py-2">⚠ Alertas detectados</div>
+          <div class="card-body p-0" id="evol-alerts"></div>
+        </div>
+
+        <div class="row g-3 mb-3" id="evol-trends"></div>
+
+        <div class="card mb-3">
+          <div class="card-header small text-muted py-2">DTCs recorrentes</div>
+          <div class="card-body" id="evol-recurring">
+            <span class="text-muted small">Sem DTCs recorrentes.</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header small text-muted py-2">Linha do tempo de scans</div>
+          <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0" id="evol-timeline">
+              <thead>
+                <tr>
+                  <th>Data</th><th>DTCs</th><th>Urgência</th>
+                  <th>Coolant</th><th>RPM</th><th>MAF</th>
+                  <th>FT curto</th><th>FT longo</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -212,6 +317,80 @@
       <div class="mt-2" id="dtc-search-results"></div>
     </div>
 
+  </div>
+</div>
+
+<!-- Modal: Branding config -->
+<div class="modal fade" id="brandingModal" tabindex="-1" aria-labelledby="brandingModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark border-secondary text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="brandingModalLabel">Branding do relatório</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body row g-3">
+        <div class="col-md-6">
+          <label class="form-label small text-muted">Nome da oficina / empresa</label>
+          <input class="form-control" id="b-workshop">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small text-muted">Mecânico responsável</label>
+          <input class="form-control" id="b-mechanic">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted">Telefone</label>
+          <input class="form-control" id="b-phone">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted">E-mail</label>
+          <input class="form-control" id="b-email">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted">URL logotipo (opcional)</label>
+          <input class="form-control" id="b-logo">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label small text-muted">Endereço</label>
+          <input class="form-control" id="b-address">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted">Título do campo de notas</label>
+          <input class="form-control" id="b-notes-header" placeholder="Observações / Próximos passos">
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="saveBranding()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Notes + Tags da sessão -->
+<div class="modal fade" id="notesModal" tabindex="-1" aria-labelledby="notesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark border-secondary text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="notesModalLabel">Sessão <span id="nm-id"></span> — Notas e tags</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label small text-muted mb-1">Tags (separe por vírgula ou espaço)</label>
+          <input class="form-control" id="nm-tags" placeholder="troca de oleo, P0171, vistoria">
+          <div id="nm-tags-preview" class="d-flex flex-wrap gap-2 mt-2"></div>
+        </div>
+        <div class="mb-1">
+          <label class="form-label small text-muted mb-1">Notas / observações / próximos passos</label>
+          <textarea class="form-control" id="nm-notes" rows="8"
+            placeholder="Observações do atendimento, itens orçados, próximos testes, contato do cliente..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="saveSessionNotes()">Salvar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -272,6 +451,35 @@ function renderPIDs(pids) {
   return html || '<span class="text-muted small">Sem dados</span>';
 }
 
+function renderFreeze(ff) {
+  if (!ff || typeof ff !== 'object') return '<span class="text-muted small">Sem freeze frame</span>';
+  const pairs = [
+    ['dtc_code',         'DTC congelado',       '',    (v) => v ? `<code class="text-warning">${esc(v)}</code>` : ''],
+    ['rpm',              'RPM',                 'rpm'],
+    ['speed_kmh',        'Velocidade',          'km/h'],
+    ['coolant_temp_c',   'Temp. motor',         '°C'],
+    ['engine_load_pct',  'Carga do motor',      '%'],
+    ['throttle_pct',     'Borboleta',           '%'],
+    ['maf_g_s',          'MAF',                 'g/s'],
+    ['fuel_trim_short_b1', 'FT curto B1',       '%'],
+    ['fuel_trim_long_b1',  'FT longo B1',       '%'],
+    ['o2_b1s1_v',        'O2 B1S1',             'V'],
+    ['intake_temp_c',    'Temp. admissão',      '°C'],
+    ['mileage_km',       'Odômetro (frame)',    'km'],
+  ];
+  let html = '<table class="table table-sm mb-0" style="max-width:560px"><thead><tr><th>Parâmetro</th><th>Valor</th></tr></thead><tbody>';
+  let filled = 0;
+  for (const [key, label, unit, fmt] of pairs) {
+    const v = ff[key];
+    if (v == null || v === '') continue;
+    const txt = fmt ? fmt(v) : (typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(1)) : esc(String(v)));
+    html += `<tr><td class="small text-muted" style="width:45%">${esc(label)}</td><td class="small">${txt} ${esc(unit) || ''}</td></tr>`;
+    filled++;
+  }
+  html += '</tbody></table>';
+  return filled ? html : '<span class="text-muted small p-2 d-block">Freeze frame vazio</span>';
+}
+
 function renderVehicleStatus(ev) {
   const monitor = ev.monitor_status || {};
   const voltage = ev.battery_voltage == null ? '—' : `${ev.battery_voltage.toFixed(1)} V`;
@@ -297,6 +505,44 @@ function renderSupportedPIDs(pids) {
   const preview = pids.slice(0, 24).map(pid => `<code class="me-2">${esc(pid)}</code>`).join('');
   const more = pids.length > 24 ? `<span class="text-muted small">+${pids.length - 24}</span>` : '';
   return `<div class="small mb-2 text-muted">${pids.length} PIDs suportados no intervalo 01-20</div>${preview}${more}`;
+}
+
+function renderTriage(triage, urgency) {
+  if (!triage) return '<span class="text-muted small">Sem triagem.</span>';
+  const drive = triage.drive_advice || '—';
+  const driveMeta = {
+    pare:      { label: 'PARE',            color: 'danger'  },
+    cautela:   { label: 'RODE COM CAUTELA', color: 'warning' },
+    pode_rodar:{ label: 'PODE RODAR',      color: 'success' },
+  };
+  const d = driveMeta[drive] || { label: String(drive).toUpperCase(), color: SEV[urgency] || 'secondary' };
+  const headline = triage.headline ? `<div class="mb-2"><strong>${esc(triage.headline)}</strong></div>` : '';
+  const obs = (triage.observations || []).map(o => `
+    <div class="d-flex justify-content-between small py-1 border-bottom border-secondary">
+      <span class="text-muted">${esc(o.label)}</span>
+      <span class="ms-3">${esc(o.value)} <span class="badge bg-${SEV[o.severity]||'secondary'} ms-2">${esc(o.severity||'')}</span></span>
+    </div>`).join('');
+
+  const list = (title, arr) => {
+    if (!arr || !arr.length) return '';
+    return `<div class="mt-3">
+      <div class="text-muted small mb-1">${esc(title)}</div>
+      <ul class="mb-0 small">${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+    </div>`;
+  };
+
+  return `
+    ${headline}
+    <div class="mb-2 d-flex align-items-center gap-2">
+      <span class="text-muted small">Orientação:</span>
+      <span class="badge bg-${d.color}">${esc(d.label)}</span>
+      <span class="ms-auto">${sevBadge(urgency || 'informativo')}</span>
+    </div>
+    ${obs ? `<div class="mt-2">${obs}</div>` : ''}
+    ${list('Causas prováveis', triage.likely_causes)}
+    ${list('Testes sugeridos (ordem)', triage.recommended_tests)}
+    ${list('O que não fazer', triage.dont_do)}
+  `;
 }
 
 // ── log ──────────────────────────────────────────────────────────────────────
@@ -351,18 +597,36 @@ async function loadDash() {
     const dtcsHtml = (last.dtc_codes || []).map(c =>
       `<code class="me-2 text-warning">${esc(c)}</code>`
     ).join('') || '<span class="text-muted">Nenhum</span>';
+    const tagHtml = (last.tags && last.tags.length)
+      ? `<div class="mb-2 d-flex flex-wrap gap-2">${last.tags.map(t =>
+          `<span class="badge bg-info text-dark">${esc(t)}</span>`).join('')}</div>`
+      : '';
+    const freezeBadge = (last.freeze_frame && Object.keys(last.freeze_frame).some(k => k !== 'raw' && last.freeze_frame[k] != null && last.freeze_frame[k] !== ''))
+      ? `<span class="badge text-bg-info ms-2" title="Freeze frame salvo">❄ Freeze</span>`
+      : '';
     const preview = (last.diagnosis || '').slice(0, 500);
     html += `<div class="col-12">
       <div class="card" style="border-left: 3px solid var(--bs-${color})">
         <div class="card-header small text-muted py-2 d-flex justify-content-between">
-          <span>Último diagnóstico</span><span>${esc(last.ts)}</span>
+          <span>Último diagnóstico${freezeBadge}</span><span>${esc(last.ts)}</span>
         </div>
         <div class="card-body">
-          <div class="mb-2 d-flex align-items-center gap-2">
+          <div class="mb-2 d-flex align-items-center gap-2 flex-wrap">
             <strong>${esc(last.vehicle_label || 'Veículo desconhecido')}</strong>
             ${sevBadge(last.urgency)}
           </div>
+          ${tagHtml}
           <div class="mb-3">${dtcsHtml}</div>
+          ${last.notes
+            ? `<div class="mb-3 small text-muted border-start border-secondary ps-2 mb-3">
+                 ${esc(last.notes)}
+               </div>`
+            : ''}
+          <div class="mb-3 d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="/report/${esc(last.id)}" target="_blank">Abrir relatório</a>
+            <a class="btn btn-outline-secondary btn-sm ms-2" href="/report/${esc(last.id)}/download">Baixar HTML</a>
+            <button class="btn btn-outline-primary btn-sm" onclick="openNotesModal(${last.id})">✎ Notas / Tags</button>
+          </div>
           ${preview ? `<div class="analysis-box" style="max-height:200px;overflow:auto">${esc(preview)}${last.diagnosis.length>500?'…':''}</div>` : ''}
         </div>
       </div>
@@ -397,7 +661,7 @@ async function loadPorts() {
 function startScan() {
   if (scanActive) return;
   logClear();
-  ['scan-health-card','scan-supported-card','scan-dtcs-card','scan-pids-card','scan-analysis-card'].forEach(id =>
+  ['scan-health-card','scan-supported-card','scan-dtcs-card','scan-pids-card','scan-triage-card','scan-analysis-card','scan-freeze-card','scan-live-card'].forEach(id =>
     document.getElementById(id).style.display = 'none'
   );
 
@@ -456,9 +720,19 @@ function startScan() {
       document.getElementById('scan-pids-card').style.display = '';
     }
 
+    if (ev.type === 'freeze_frame') {
+      document.getElementById('scan-freeze-body').innerHTML = renderFreeze(ev.freeze_frame);
+      document.getElementById('scan-freeze-card').style.display = '';
+    }
+
     if (ev.type === 'analysis') {
       document.getElementById('scan-analysis-text').textContent = ev.text;
       document.getElementById('scan-analysis-card').style.display = '';
+    }
+
+    if (ev.type === 'triage') {
+      document.getElementById('scan-triage-body').innerHTML = renderTriage(ev.triage, ev.urgency);
+      document.getElementById('scan-triage-card').style.display = '';
     }
 
     if (ev.type === 'saved') {
@@ -483,18 +757,96 @@ function startScan() {
   };
 }
 
+// ── live capture 60s ──────────────────────────────────────────────────────────
+let liveEs = null;
+const LIVE_W = 600, LIVE_H = 240;
+const LIVE_SERIES = [
+  { key: 'rpm',               label: 'RPM',           color: '#f0883e', side: 'L',  min: 0,   max: 6000 },
+  { key: 'coolant_temp_c',    label: 'Coolant',       color: '#58a6ff', side: 'L',  min: 0,   max: 130  },
+  { key: 'maf_g_s',           label: 'MAF',           color: '#7ee787', side: 'R',  min: 0,   max: 25   },
+  { key: 'fuel_trim_short_b1',label: 'FT curto B1',   color: '#ff7b72', side: 'R',  min: -25, max: 25   },
+];
+
+function startLiveCapture(seconds = 60) {
+  if (liveEs) return;
+  const port = document.getElementById('scan-port').value.trim();
+  const wifi = document.getElementById('scan-wifi').value.trim();
+  const demo = document.getElementById('scan-demo').checked;
+  document.getElementById('scan-live-card').style.display = '';
+  document.getElementById('scan-live-counter').textContent = '0';
+  document.getElementById('scan-live-series').innerHTML = LIVE_SERIES.map((s, i) =>
+    `<polyline id="live-serie-${i}" fill="none" stroke="${s.color}" stroke-width="1.4"
+     stroke-linejoin="round" stroke-linecap="round" points=""/>
+     <text x="${2 + i*90}" y="234" font-size="10" fill="${s.color}">${s.label}</text>`
+  ).join('');
+
+  const history = LIVE_SERIES.map(() => []);
+  const params = new URLSearchParams();
+  if (port) params.set('port', port);
+  if (wifi) params.set('wifi', wifi);
+  if (demo) params.set('demo', 'true');
+  params.set('duration', String(seconds));
+
+  liveEs = new EventSource(`/api/scan/live?${params}`);
+  liveEs.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'tick') {
+      document.getElementById('scan-live-counter').textContent = String(ev.t);
+      const pids = ev.pids || {};
+      LIVE_SERIES.forEach((s, i) => {
+        const raw = pids[s.key];
+        const v = (typeof raw === 'number' && Number.isFinite(raw)) ? raw : null;
+        history[i].push(v);
+        if (history[i].length > 180) history[i].shift();
+      });
+      LIVE_SERIES.forEach((s, i) => {
+        const data = history[i];
+        const baseX = s.side === 'L' ? 0 : LIVE_W / 2;
+        const spanX = LIVE_W / 2 - 1;
+        const pts = data.map((v, j) => {
+          const x = baseX + (j / Math.max(1, seconds - 1)) * spanX;
+          if (v == null) return null;
+          const norm = (v - s.min) / (s.max - s.min);
+          const y = LIVE_H - 14 - (Math.max(0, Math.min(1, norm)) * (LIVE_H - 26));
+          return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).filter(Boolean).join(' ');
+        document.getElementById(`live-serie-${i}`).setAttribute('points', pts);
+      });
+    } else if (ev.type === 'error') {
+      logLine('live: ' + ev.message, 'log-err');
+      stopLiveCapture();
+    } else if (ev.type === 'done') {
+      stopLiveCapture();
+    }
+  };
+  liveEs.onerror = () => stopLiveCapture();
+}
+
+function stopLiveCapture() {
+  if (liveEs) { liveEs.close(); liveEs = null; }
+  const btn = document.getElementById('scan-btn-live');
+  if (btn) { btn.classList.remove('disabled'); btn.removeAttribute('disabled'); }
+}
+
 // ── histórico ─────────────────────────────────────────────────────────────────
 
 async function loadHistory() {
   const rows = await fetch('/api/history?limit=30').then(r => r.json());
   const tbody = document.querySelector('#hist-table tbody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-3">Nenhum diagnóstico registrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center py-3">Nenhum diagnóstico registrado.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(s => {
     const color = SEV[s.urgency] || 'secondary';
     const dtcs = (s.dtc_codes || []).map(c => `<code class="me-1 text-warning">${esc(c)}</code>`).join('') || '—';
+    const tagsPreview = (s.tags && s.tags.length)
+      ? s.tags.slice(0, 3).map(t => `<span class="badge bg-info text-dark small ms-1">${esc(t)}</span>`).join('')
+      : '';
+    const notesPreview = s.notes ? `<small class="text-muted d-block">${esc(s.notes.slice(0,48))}${s.notes.length>48?'…':''}</small>` : '';
+    const freezePreview = (s.freeze_frame && Object.keys(s.freeze_frame).some(k => k !== 'raw' && s.freeze_frame[k] != null && s.freeze_frame[k] !== ''))
+      ? `<span class="badge text-bg-info small me-1">❄</span>`
+      : '';
     return `<tr>
       <td class="text-muted small">#${esc(s.id)}</td>
       <td class="small">${esc(s.ts)}</td>
@@ -502,6 +854,12 @@ async function loadHistory() {
       <td>${dtcs}</td>
       <td>${sevBadge(s.urgency)}</td>
       <td class="text-muted small">${esc(s.km || '—')}</td>
+      <td class="small">${freezePreview}${tagsPreview}${notesPreview}</td>
+      <td class="text-end">
+        <button class="btn btn-outline-primary btn-sm" onclick="openNotesModal(${esc(s.id)})">✎</button>
+        <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}" target="_blank">Relatório</a>
+        <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}/download">Baixar</a>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -558,6 +916,381 @@ async function showDTCInfo(code) {
     </div>`;
 }
 
+// ── evolução ──────────────────────────────────────────────────────────────────
+
+async function loadVehicles() {
+  const res = await fetch('/api/vehicles');
+  const list = await res.json();
+  const sel = document.getElementById('evol-vin-select');
+  if (!list.length) {
+    sel.innerHTML = '<option value="">— nenhum veículo registrado —</option>';
+    return;
+  }
+  sel.innerHTML =
+    '<option value="">— selecione um veículo —</option>' +
+    list.map(v =>
+      `<option value="${esc(v.vin)}">${esc(v.vehicle_label)}` +
+      `  (${v.session_count}x) — VIN ${esc(v.vin)}</option>`
+    ).join('');
+}
+
+function _sparklineSVG(series, colorHex) {
+  if (!series || series.length < 2) return '';
+  const W = 120, H = 28, PAD = 2;
+  const nums = series.map(v => (v == null || isNaN(v) ? null : +v));
+  const present = nums.filter(v => v != null);
+  if (present.length < 2) return '';
+  const min = Math.min(...present);
+  const max = Math.max(...present);
+  const span = (max - min) || 1;
+  const stepX = (W - PAD * 2) / (nums.length - 1);
+  const pts = [];
+  for (let i = 0; i < nums.length; i++) {
+    if (nums[i] == null) continue;
+    const x = PAD + i * stepX;
+    const y = H - PAD - ((nums[i] - min) / span) * (H - PAD * 2);
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  if (pts.length < 2) return '';
+  const poly = pts.join(' ');
+  const lastPts = pts[pts.length - 1].split(',');
+  const cx = +lastPts[0], cy = +lastPts[1];
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"
+           style="display:block; width:100%; height:28px; margin-top:6px;">
+    <polyline fill="none" stroke="${colorHex}" stroke-width="1.6"
+              points="${poly}" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.2" fill="${colorHex}"/>
+  </svg>`;
+}
+
+function _trendBadge(dir, pct) {
+  const arrow = dir === 'up'   ? '<span class="text-danger ms-1">▲</span>'
+             : dir === 'down' ? '<span class="text-success ms-1">▼</span>'
+             :                  '<span class="text-muted ms-1">◆</span>';
+  const pctTxt = (pct != null && Math.abs(pct) >= 1)
+    ? ` <span class="small text-muted">(${pct>0?'+':''}${pct.toFixed(0)}%)</span>`
+    : '';
+  return arrow + pctTxt;
+}
+
+function renderTrends(trends) {
+  const KEYS = ['coolant_temp', 'rpm', 'maf', 'fuel_trim_short',
+                'fuel_trim_long', 'o2', 'speed'];
+  const COLORS = {
+    success: '#3fb950', warning: '#d29922', danger: '#f85149', info: '#58a6ff'
+  };
+  let html = '';
+  for (const key of KEYS) {
+    const t = trends.params[key];
+    if (!t || (t.last == null && t.avg == null)) continue;
+
+    const hasDanger = (t.alerts || []).some(a => a.level === 'danger');
+    const hasWarn   = (t.alerts || []).some(a => a.level === 'warning');
+    const color = hasDanger ? 'danger' : hasWarn ? 'warning' : 'success';
+    const spark = _sparklineSVG(t.series || [], COLORS[color]);
+
+    html += `
+      <div class="col-md-4 col-lg-3">
+        <div class="card h-100">
+          <div class="card-body py-2 px-3">
+            <div class="d-flex justify-content-between align-items-start">
+              <div class="small text-muted">${esc(t.label)}</div>
+              <span class="badge bg-${color}">${esc(t.last != null ? 'atual' : 'médio')}</span>
+            </div>
+            <div class="fs-4 fw-bold my-1">
+              ${esc(t.last != null ? t.last : (t.avg != null ? t.avg : '—'))}
+              <small class="text-muted fw-normal">${esc(t.unit)}</small>
+              ${_trendBadge(t.direction, t.pct_change)}
+            </div>
+            <div class="small text-muted mb-1">
+              Média: ${esc(t.avg != null ? t.avg : '—')} ${esc(t.unit)}
+              ${t.first != null ? `<br>Primeiro: ${esc(t.first)} ${esc(t.unit)}` : ''}
+              ${t.stdev != null ? `<br>σ: ${esc(t.stdev)}` : ''}
+            </div>
+            ${spark}
+            ${(t.alerts && t.alerts.length) ? `
+              <div class="mt-2 small">
+                ${t.alerts.map(a =>
+                  `<div class="text-${a.level === 'danger' ? 'danger' : 'warning'}">
+                     · ${esc(a.message)}
+                   </div>`
+                ).join('')}
+              </div>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }
+  return html || '<div class="col-12 text-muted small">Sem parâmetros suficientes para tendência.</div>';
+}
+
+function _renderAlertsCard(trends) {
+  const flat = [];
+  for (const [key, t] of Object.entries(trends.params || {})) {
+    for (const a of t.alerts || []) {
+      flat.push({ param: t.label, level: a.level, message: a.message, key });
+    }
+  }
+  flat.sort((a, b) => (a.level === 'danger' ? -1 : 1) - (b.level === 'danger' ? -1 : 1));
+  if (!flat.length) return null;
+  return flat.map(a => `
+    <div class="border-bottom border-secondary small px-3 py-2 d-flex align-items-start gap-2">
+      <span class="badge bg-${a.level === 'danger' ? 'danger' : 'warning'} mt-1">
+        ${esc(a.param)}
+      </span>
+      <span class="flex-grow-1">${esc(a.message)}</span>
+    </div>`).join('');
+}
+
+async function loadVehicleEvolution(vin) {
+  document.getElementById('evol-empty').style.display = vin ? 'none' : '';
+  document.getElementById('evol-content').style.display = vin ? '' : 'none';
+  document.getElementById('evol-alerts-card').style.display = 'none';
+  document.getElementById('evol-vehicle-meta').textContent = '';
+  const btnJson = document.getElementById('evol-export-json');
+  const btnCsv  = document.getElementById('evol-export-csv');
+  btnJson.style.display = 'none';
+  btnCsv.style.display  = 'none';
+  if (!vin) return;
+
+  const encVin = encodeURIComponent(vin);
+  const [histRes, trendsRes] = await Promise.all([
+    fetch(`/api/vehicle/${encVin}/history?limit=50`).then(r => r.json()),
+    fetch(`/api/vehicle/${encVin}/trends?limit=50`).then(r => r.json()),
+  ]);
+  const sessions = histRes;
+  if (!sessions.length) {
+    document.getElementById('evol-empty').textContent =
+      'Nenhum scan registrado para este VIN.';
+    document.getElementById('evol-empty').style.display = '';
+    document.getElementById('evol-content').style.display = 'none';
+    return;
+  }
+
+  btnJson.style.display = '';
+  btnCsv.style.display  = '';
+  btnJson.href = `/api/vehicle/${encVin}/export.json`;
+  btnCsv.href  = `/api/vehicle/${encVin}/export.csv`;
+  btnJson.setAttribute('download', `autodiag-${vin}.json`);
+  btnCsv.setAttribute('download',  `autodiag-${vin}.csv`);
+
+  const last = sessions[0];
+  document.getElementById('evol-vehicle-meta').innerHTML =
+    `<strong>${esc(last.vehicle_label || '—')}</strong>` +
+    ` · ${esc(sessions.length)} scan(s) · último em ${esc(last.ts || '—')}`;
+
+  const alertsHtml = _renderAlertsCard(trendsRes);
+  const alertsCard = document.getElementById('evol-alerts-card');
+  if (alertsHtml) {
+    alertsCard.style.display = '';
+    document.getElementById('evol-alerts').innerHTML = alertsHtml;
+  } else {
+    alertsCard.style.display = 'none';
+  }
+
+  document.getElementById('evol-trends').innerHTML = renderTrends(trendsRes);
+
+  const recurring = trendsRes.recurring_dtcs || [];
+  document.getElementById('evol-recurring').innerHTML = recurring.length
+    ? `<div class="d-flex flex-wrap gap-2">${recurring.map(r =>
+        `<span class="badge bg-warning text-dark">
+           <code>${esc(r.code)}</code>
+           <span class="ms-1 opacity-75">${esc(r.count)}x</span>
+         </span>`
+       ).join('')}</div>`
+    : '<span class="text-muted small">Sem DTCs recorrentes (≥2 aparições).</span>';
+
+  const tbody = document.querySelector('#evol-timeline tbody');
+  tbody.innerHTML = sessions.map(s => {
+    const dtcs = (s.dtc_codes || []).map(c =>
+      `<code class="me-1 text-warning">${esc(c)}</code>`
+    ).join('') || '<span class="text-muted">—</span>';
+    const freezeChip = (s.freeze_frame && Object.keys(s.freeze_frame).some(k => k !== 'raw' && s.freeze_frame[k] != null && s.freeze_frame[k] !== ''))
+      ? '<span class="badge text-bg-info small me-1" title="Freeze frame">❄</span>'
+      : '';
+    return `<tr>
+      <td class="small">${freezeChip}${esc(s.ts || '—')}</td>
+      <td>${dtcs}</td>
+      <td>${sevBadge(s.urgency || 'informativo')}</td>
+      <td class="small">${esc(s.coolant_temp ?? '—')}</td>
+      <td class="small">${esc(s.rpm ?? '—')}</td>
+      <td class="small">${esc(s.maf != null ? Number(s.maf).toFixed(1) : '—')}</td>
+      <td class="small">${esc(s.fuel_trim_short != null ? Number(s.fuel_trim_short).toFixed(1)+'%' : '—')}</td>
+      <td class="small">${esc(s.fuel_trim_long != null ? Number(s.fuel_trim_long).toFixed(1)+'%' : '—')}</td>
+      <td class="text-end">
+        <a class="btn btn-outline-secondary btn-sm"
+           href="/report/${esc(s.id)}" target="_blank">Relatório</a>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── modal helpers: branding + notes/tags + help onboarding ────────────────────
+
+function openBranding() {
+  fetch('/api/branding').then(r => r.json()).then(b => {
+    document.getElementById('b-workshop').value = b.workshop_name || '';
+    document.getElementById('b-mechanic').value = b.mechanic_name || '';
+    document.getElementById('b-phone').value = b.phone || '';
+    document.getElementById('b-email').value = b.email || '';
+    document.getElementById('b-address').value = b.address || '';
+    document.getElementById('b-logo').value = b.logo_url || '';
+    document.getElementById('b-notes-header').value = b.notes_header || '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('brandingModal')).show();
+  });
+}
+
+async function saveBranding() {
+  const payload = {
+    workshop_name: document.getElementById('b-workshop').value.trim(),
+    mechanic_name: document.getElementById('b-mechanic').value.trim(),
+    phone:         document.getElementById('b-phone').value.trim(),
+    email:         document.getElementById('b-email').value.trim(),
+    address:       document.getElementById('b-address').value.trim(),
+    logo_url:      document.getElementById('b-logo').value.trim(),
+    notes_header:  document.getElementById('b-notes-header').value.trim(),
+  };
+  await fetch('/api/branding', {method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)});
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('brandingModal')).hide();
+}
+
+let _activeNotesSid = null;
+function openNotesModal(sid) {
+  _activeNotesSid = sid;
+  fetch(`/api/session/${sid}`).then(r => r.json()).then(s => {
+    document.getElementById('nm-id').textContent = `#${sid}`;
+    document.getElementById('nm-notes').value = s.notes || '';
+    const tags = s.tags || [];
+    document.getElementById('nm-tags').value = Array.isArray(tags) ? tags.join(', ') : '';
+    _renderTagsPreview();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('notesModal')).show();
+  });
+}
+
+function _renderTagsPreview() {
+  const raw = document.getElementById('nm-tags').value;
+  const tags = raw.split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+  const el = document.getElementById('nm-tags-preview');
+  el.innerHTML = tags.length
+    ? tags.map(t => `<span class="badge bg-info text-dark">${esc(t)}</span>`).join('')
+    : `<span class="text-muted small">Sem tags</span>`;
+  return tags;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('nm-tags');
+  if (el) el.addEventListener('input', _renderTagsPreview);
+});
+
+async function saveSessionNotes() {
+  if (_activeNotesSid == null) return;
+  const tags = _renderTagsPreview();
+  const notes = document.getElementById('nm-notes').value;
+  await fetch(`/api/session/${_activeNotesSid}`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({notes, tags}),
+  });
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('notesModal')).hide();
+  if (document.getElementById('tab-hist').classList.contains('active', 'show')) loadHistory();
+  if (document.getElementById('tab-dash').classList.contains('active', 'show')) loadDash();
+}
+
+// ── onboarding help persona modal ─────────────────────────────────────────────
+
+const PERSONAS = [
+  {
+    key: 'workshop',
+    title: '🔧 Oficina / Mecânico independente',
+    points: [
+      '1. Conecte o ELM327 (USB ou Wi-Fi) e abra a aba Scan. Marque "Modo demo" se não tiver hardware ainda.',
+      '2. Inicie o scan e salve cada atendimento na aba Histórico.',
+      '3. Use ✎ Notas / Tags para marcar o que foi feito (ex: troca de óleo, orçado P0171).',
+      '4. Abra o relatório e use ⚙ Branding para colocar dados da sua oficina. Entregue o PDF/HTML para o cliente.',
+      '5. Use a aba Evolução por VIN para mostrar a tendência do carro em atendimentos de retorno.',
+    ],
+  },
+  {
+    key: 'inspector',
+    title: '🚗 Vistoriador de seminovos',
+    points: [
+      '1. Ative o "Modo demo" na aba Scan se o cliente não quiser conectar agora, ou conecte via Wi-Fi ELM327 portátil.',
+      '2. Salve 1 scan por carro com VIN e KM. Exporte o CSV no botão ⤓ CSV da aba Evolução.',
+      '3. Use ✎ Notas para registrar "chassi batido?", "pneus 30% vida" etc.',
+      '4. Anexe o relatório HTML em cada vistoria como prova objetiva de leitura OBD.',
+    ],
+  },
+  {
+    key: 'hobbyist',
+    title: '🚙 Entusiasta / dono de carro',
+    points: [
+      '1. Baixe um ELM327 compatível (USB/Bluetooth/Wi-Fi) e conecte no OBD2 do seu carro.',
+      '2. Use "Modo demo" para aprender antes de testar no carro real.',
+      '3. Quando aparecer a luz do check engine, leia os DTCs, veja causas e testes sugeridos.',
+      '4. Salve scans mensais e use a aba Evolução para perceber se fuel trim ou coolant estão piorando.',
+    ],
+  },
+];
+
+function openHelpOnboarding() {
+  const html = `
+    <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark border-secondary text-light">
+          <div class="modal-header border-secondary">
+            <h5 class="modal-title" id="helpModalLabel">Guia rápido — qual é o seu perfil?</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body row g-3">
+            ${PERSONAS.map(p => `
+              <div class="col-md-4">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h6 class="mb-2">${p.title}</h6>
+                    <ol class="small mb-0 ps-3">
+                      ${p.points.map(x => `<li class="mb-2">${esc(x)}</li>`).join('')}
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+            <div class="col-12 mt-3">
+              <div class="card">
+                <div class="card-header small text-muted py-2">Arquitetura / onde os dados ficam</div>
+                <div class="card-body small">
+                  <ul class="mb-0 ps-3">
+                    <li>Tudo roda local no seu computador (<code>localhost:8000</code>).</li>
+                    <li>Histórico de scans: <code>~/.autodiag/history.db</code> (SQLite).</li>
+                    <li>Branding: <code>~/.autodiag/config.json</code>.</li>
+                    <li>Análise IA é opcional (via Anthropic). Você pode desmarcar "Sem análise IA".</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer border-secondary">
+            <a href="https://github.com/" class="btn btn-outline-secondary btn-sm disabled">Documentação</a>
+            <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Entendi, vamos diagnosticar</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  if (!document.getElementById('helpModal')) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    document.body.appendChild(wrapper.firstElementChild);
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show();
+}
+
+// first-run: show onboarding automatically if no last scan label yet + no history
+(async () => {
+  try {
+    const rows = await fetch('/api/history?limit=1').then(r => r.json());
+    if (!rows.length) openHelpOnboarding();
+  } catch (_) { /* ignore */ }
+})();
+
 // ── tab events ────────────────────────────────────────────────────────────────
 
 document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
@@ -565,6 +1298,11 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
     const t = e.target.getAttribute('href');
     if (t === '#tab-hist') loadHistory();
     if (t === '#tab-dash') loadDash();
+    if (t === '#tab-evol') {
+      loadVehicles();
+      const sel = document.getElementById('evol-vin-select');
+      if (sel.value) loadVehicleEvolution(sel.value);
+    }
   });
 });
 

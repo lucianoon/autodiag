@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import io
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -29,6 +30,8 @@ load_dotenv(".env")
 
 from autodiag import ui
 from autodiag.core.diagnosis import infer_urgency
+from autodiag.core.report import build_report, render_report_html
+from autodiag.core.triage import build_guided_triage
 from autodiag.core.vehicle import VehicleProfile, decode_vin_local, decode_vin_nhtsa
 from autodiag.db.history import History, Session
 from autodiag.elm327 import create_reader
@@ -88,11 +91,22 @@ async def cmd_scan(args):
         all_dtcs = dtcs + pending_dtcs + permanent_dtcs
         ui.display.dtcs_table(all_dtcs)
 
+        freeze_frame: dict | None = None
+        try:
+            ff_raw = reader.get_freeze_frame()
+            freeze_frame = ff_raw.as_dict()
+            if any(freeze_frame.get(k) not in (None, "") for k in freeze_frame if k != "raw"):
+                ui.display.freeze_frame_panel(freeze_frame)
+        except Exception as _e:
+            freeze_frame = None
+
         ui.display.section("Lendo PIDs ao vivo")
         pids = reader.get_live_pids()
         ui.display.pids_table(pids)
 
         urgency = infer_urgency(all_dtcs, pids)
+        triage = build_guided_triage(all_dtcs, pids, urgency)
+        ui.display.triage_panel(triage, urgency)
 
         diagnosis_text = ""
         if not getattr(args, "no_ai", False):
@@ -139,10 +153,12 @@ async def cmd_scan(args):
             fuel_trim_long=pids.fuel_trim_long_b1,
             o2=pids.o2_b1s1_v,
             diagnosis=diagnosis_text,
+            triage=triage,
             cost_min=0,
             cost_max=0,
             km=km,
             notes=notes,
+            freeze_frame=freeze_frame,
         )
         sid = History().save(session)
         ui.display.ok(f"Diagnóstico salvo no histórico (ID #{sid})")
@@ -187,6 +203,26 @@ def cmd_clear(args):
         ui.display.ok("DTCs apagados com sucesso.")
     else:
         ui.display.err("Falha ao apagar DTCs.")
+
+
+def cmd_report(args):
+    sid = int(args.id)
+    history = History()
+    row = history.get(sid)
+    if not row:
+        ui.display.err(f"Sessão {sid} não encontrada.")
+        sys.exit(1)
+    prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
+    rep = build_report(row, prev)
+    html = render_report_html(rep)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".html", delete=False) as f:
+        f.write(html)
+        path = f.name
+    ui.display.ok(f"Relatório gerado: {path}")
+    if getattr(args, "open", False):
+        import webbrowser
+
+        webbrowser.open(f"file://{path}")
 
 
 def main():
@@ -243,6 +279,10 @@ def main():
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--open", action="store_true", help="Abrir browser automaticamente")
 
+    p_report = sub.add_parser("report", help="Gerar relatório HTML de uma sessão")
+    p_report.add_argument("id", metavar="ID", help="ID da sessão no histórico")
+    p_report.add_argument("--open", action="store_true", help="Abrir relatório no browser")
+
     args = parser.parse_args()
 
     if args.cmd == "scan":
@@ -267,6 +307,8 @@ def main():
             threading.Timer(1.0, lambda: webbrowser.open(f"http://{args.host}:{args.port}")).start()
         print(f"  AutoDiag web → http://{args.host}:{args.port}")
         uvicorn.run(app, host=args.host, port=args.port)
+    elif args.cmd == "report":
+        cmd_report(args)
     else:
         parser.print_help()
 

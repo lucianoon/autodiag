@@ -1,5 +1,5 @@
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
@@ -125,6 +125,92 @@ def analysis_panel(text: str, urgency: str = "informativo"):
     # Saída de modelo é texto arbitrário: um "[CRITICO]" desapareceria e um
     # "[/PCV]" derrubaria o painel com MarkupError. Text() não parseia marcação.
     console.print(Panel(Text(text), title="Análise IA", border_style=color))
+
+
+def triage_panel(triage: dict, urgency: str = "informativo"):
+    if not triage:
+        return
+    sev_colors = {"critico": "red", "atencao": "yellow", "informativo": "green"}
+    color = sev_colors.get(urgency, "white")
+    drive = triage.get("drive_advice") or "—"
+    drive_map = {"pare": "PARE", "cautela": "RODE COM CAUTELA", "pode_rodar": "PODE RODAR"}
+    drive_label = drive_map.get(drive, drive.upper())
+
+    headline = triage.get("headline") or ""
+    header_lines: list[str] = []
+    if headline:
+        header_lines.append(f"[bold]{escape(headline)}[/]")
+    header_lines.append(f"Orientação: [bold]{escape(drive_label)}[/]")
+
+    obs = triage.get("observations") or []
+    items: list = [Text.from_markup("\n".join(header_lines))]
+    if obs:
+        t = Table(box=box.SIMPLE, show_header=True)
+        t.add_column("Sinal", style="dim")
+        t.add_column("Valor", justify="right")
+        t.add_column("Nível", width=12)
+        for o in obs:
+            sev = o.get("severity") or "informativo"
+            sev_color = sev_colors.get(sev, "white")
+            t.add_row(
+                escape(o.get("label") or "—"),
+                escape(o.get("value") or "—"),
+                f"[{sev_color}]{escape(sev)}[/]",
+            )
+        items.append(t)
+
+    def bullets(title: str, values: list[str]) -> Text | None:
+        if not values:
+            return None
+        lines = [f"[bold]{escape(title)}[/]"] + [f"• {escape(v)}" for v in values]
+        return Text.from_markup("\n".join(lines))
+
+    for section in (
+        bullets("Causas prováveis", triage.get("likely_causes") or []),
+        bullets("Testes sugeridos (ordem)", triage.get("recommended_tests") or []),
+        bullets("O que não fazer", triage.get("dont_do") or []),
+    ):
+        if section is not None:
+            items.append(section)
+
+    console.print(Panel(Group(*items), title="Triagem guiada", border_style=color))
+
+
+def freeze_frame_panel(ff: dict):
+    if not isinstance(ff, dict):
+        return
+    pairs = [
+        ("dtc_code",        "DTC congelado",        ""),
+        ("rpm",             "RPM",                  "rpm"),
+        ("speed_kmh",       "Velocidade",           "km/h"),
+        ("coolant_temp_c",  "Temp. motor",          "°C"),
+        ("engine_load_pct", "Carga do motor",       "%"),
+        ("throttle_pct",    "Travão (throttle)",    "%"),
+        ("maf_g_s",         "MAF",                  "g/s"),
+        ("fuel_trim_short_b1","FT curto B1",        "%"),
+        ("fuel_trim_long_b1","FT longo B1",         "%"),
+        ("o2_b1s1_v",       "O2 B1S1",              "V"),
+        ("intake_temp_c",   "Temp. admissão",       "°C"),
+        ("mileage_km",      "Odômetro do frame",    "km"),
+    ]
+    t = Table(box=box.SIMPLE, show_header=True)
+    t.add_column("Parâmetro", style="dim")
+    t.add_column("Valor", justify="right")
+    for key, label, unit in pairs:
+        v = ff.get(key)
+        if v in (None, ""):
+            continue
+        if isinstance(v, float):
+            text = f"{v:.1f}"
+        else:
+            is_dtc = isinstance(v, str) and v.startswith(("P", "C", "B", "U"))
+            text = (
+                f"[bold]{escape(str(v))}[/]" if is_dtc else str(v)
+            )
+        t.add_row(label, f"{text} {unit}".strip())
+    if t.row_count:
+        section("❄ Freeze Frame")
+        console.print(t)
 
 
 def history_table(sessions: list[dict]):
