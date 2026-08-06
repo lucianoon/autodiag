@@ -57,17 +57,20 @@ async def index():
 
 @app.get("/api/summary")
 async def api_summary():
-    return History().summary()
+    with History() as history:
+        return history.summary()
 
 
 @app.get("/api/history")
 async def api_history(limit: int = Query(10, ge=1, le=100)):
-    return History().list(limit)
+    with History() as history:
+        return history.list(limit)
 
 
 @app.get("/api/session/{sid}")
 async def api_session(sid: int):
-    row = History().get(sid)
+    with History() as history:
+        row = history.get(sid)
     if not row:
         return JSONResponse({"error": f"Sessão {sid} não encontrada"}, status_code=404)
     return row
@@ -88,9 +91,13 @@ async def api_patch_session(
             if k == "notes" and not isinstance(v, str):
                 raise HTTPException(status_code=400, detail="notes deve ser string")
             patch[k] = v
-    if not patch:
-        return History().get(sid) or HTTPException(status_code=404)
-    updated = History().update_session(sid, **patch)
+    with History() as history:
+        if not patch:
+            row = history.get(sid)
+            if row is None:
+                raise HTTPException(status_code=404, detail="Sessão não encontrada")
+            return row
+        updated = history.update_session(sid, **patch)
     if updated is None:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
     return updated
@@ -113,23 +120,27 @@ async def api_put_branding(body: dict[str, Any] = _DEFAULT_BODY_FACTORY):
 
 @app.get("/api/vehicles")
 async def api_vehicles():
-    return History().list_vehicles()
+    with History() as history:
+        return history.list_vehicles()
 
 
 @app.get("/api/vehicle/{vin}/history")
 async def api_vehicle_history(vin: str, limit: int = Query(10, ge=1, le=100)):
-    return History().list_by_vin(vin, limit=limit)
+    with History() as history:
+        return history.list_by_vin(vin, limit=limit)
 
 
 @app.get("/api/vehicle/{vin}/trends")
 async def api_vehicle_trends(vin: str, limit: int = Query(50, ge=2, le=500)):
-    sessions = History().list_by_vin(vin, limit=limit)
+    with History() as history:
+        sessions = history.list_by_vin(vin, limit=limit)
     return build_vehicle_trends(sessions)
 
 
 @app.get("/api/vehicle/{vin}/export.json")
 async def api_vehicle_export_json(vin: str, limit: int = Query(500, ge=1, le=5000)):
-    sessions = History().list_by_vin(vin, limit=limit)
+    with History() as history:
+        sessions = history.list_by_vin(vin, limit=limit)
     trends = build_vehicle_trends(sessions)
     payload = {"vin": vin, "sessions": sessions, "trends": trends}
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -142,7 +153,8 @@ async def api_vehicle_export_json(vin: str, limit: int = Query(500, ge=1, le=500
 
 @app.get("/api/vehicle/{vin}/export.csv")
 async def api_vehicle_export_csv(vin: str, limit: int = Query(500, ge=1, le=5000)):
-    sessions = History().list_by_vin(vin, limit=limit)
+    with History() as history:
+        sessions = history.list_by_vin(vin, limit=limit)
     cols = [
         "id", "ts", "vin", "vehicle_label", "urgency",
         "coolant_temp", "rpm", "maf", "fuel_trim_short", "fuel_trim_long",
@@ -167,24 +179,24 @@ async def api_vehicle_export_csv(vin: str, limit: int = Query(500, ge=1, le=5000
 
 @app.get("/report/{sid}", response_class=HTMLResponse)
 async def report(sid: int):
-    history = History()
-    row = history.get(sid)
-    if not row:
-        return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
-    prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
-    vhist = history.list_by_vin(row.get("vin") or "", limit=8)
+    with History() as history:
+        row = history.get(sid)
+        if not row:
+            return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
+        prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
+        vhist = history.list_by_vin(row.get("vin") or "", limit=8)
     rep = build_report(row, prev, vehicle_history=vhist)
     return render_report_html(rep)
 
 
 @app.get("/report/{sid}/download", response_class=HTMLResponse)
 async def report_download(sid: int):
-    history = History()
-    row = history.get(sid)
-    if not row:
-        return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
-    prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
-    vhist = history.list_by_vin(row.get("vin") or "", limit=8)
+    with History() as history:
+        row = history.get(sid)
+        if not row:
+            return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
+        prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
+        vhist = history.list_by_vin(row.get("vin") or "", limit=8)
     rep = build_report(row, prev, vehicle_history=vhist)
     html = render_report_html(rep)
     return HTMLResponse(
@@ -332,30 +344,31 @@ async def api_scan_stream(
                     except Exception as e:
                         send({"type": "warn", "message": f"Erro na análise IA: {e}"})
 
-            sid = History().save(
-                Session(
-                    id=None,
-                    ts=datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    vin=vehicle.vin,
-                    vehicle_label=vehicle.label,
-                    dtc_codes=[d.code for d in all_dtcs],
-                    urgency=urgency,
-                    rpm=pids.rpm,
-                    speed=pids.speed_kmh,
-                    coolant_temp=pids.coolant_temp_c,
-                    maf=pids.maf_g_s,
-                    fuel_trim_short=pids.fuel_trim_short_b1,
-                    fuel_trim_long=pids.fuel_trim_long_b1,
-                    o2=pids.o2_b1s1_v,
-                    diagnosis=analysis,
-                    triage=triage,
-                    cost_min=0,
-                    cost_max=0,
-                    km=None,
-                    notes="",
-                    freeze_frame=freeze_frame,
+            with History() as history:
+                sid = history.save(
+                    Session(
+                        id=None,
+                        ts=datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        vin=vehicle.vin,
+                        vehicle_label=vehicle.label,
+                        dtc_codes=[d.code for d in all_dtcs],
+                        urgency=urgency,
+                        rpm=pids.rpm,
+                        speed=pids.speed_kmh,
+                        coolant_temp=pids.coolant_temp_c,
+                        maf=pids.maf_g_s,
+                        fuel_trim_short=pids.fuel_trim_short_b1,
+                        fuel_trim_long=pids.fuel_trim_long_b1,
+                        o2=pids.o2_b1s1_v,
+                        diagnosis=analysis,
+                        triage=triage,
+                        cost_min=0,
+                        cost_max=0,
+                        km=None,
+                        notes="",
+                        freeze_frame=freeze_frame,
+                    )
                 )
-            )
             send({"type": "saved", "session_id": sid, "urgency": urgency})
         except ConnectionError as e:
             send({"type": "error", "message": str(e)})

@@ -62,6 +62,10 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 - A página de Histórico e o Dashboard passam a oferecer links diretos para
   abrir e baixar relatórios.
+- `History` ganhou `close()` e suporte a context manager; CLI, servidor web e
+  testes fecham a conexão SQLite explicitamente.
+- A CI passou a rodar também no Windows (`ubuntu-latest` + `windows-latest`),
+  plataforma predominante do público-alvo da ferramenta.
 - A comparação do relatório agora inclui delta e variação percentual e filtra
   mudanças pequenas por thresholds.
 
@@ -69,6 +73,12 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 - `summary().last.dtc_codes` agora retorna lista (e não JSON bruto), alinhando
   o formato com `history()` e evitando inconsistência no Dashboard.
+- No Windows, a conexão SQLite aberta pela `History` mantinha o `history.db`
+  travado indefinidamente (impedindo mover ou apagar o arquivo com o app
+  aberto) e derrubava um teste na limpeza do diretório temporário.
+- `PATCH /api/session/{sid}` com corpo vazio em sessão inexistente agora
+  retorna 404 de verdade (antes devolvia o objeto `HTTPException` serializado
+  com status 200).
 
 ## [0.2.1] — 2026-07-27
 

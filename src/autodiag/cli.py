@@ -160,7 +160,8 @@ async def cmd_scan(args):
             notes=notes,
             freeze_frame=freeze_frame,
         )
-        sid = History().save(session)
+        with History() as history:
+            sid = history.save(session)
         ui.display.ok(f"Diagnóstico salvo no histórico (ID #{sid})")
     except ConnectionError as e:
         ui.display.err(str(e))
@@ -171,12 +172,14 @@ async def cmd_scan(args):
 
 def cmd_history(args):
     limit = getattr(args, "limit", 10)
-    sessions = History().list(limit)
+    with History() as history:
+        sessions = history.list(limit)
     ui.display.history_table(sessions)
 
 
 def cmd_summary(_args):
-    data = History().summary()
+    with History() as history:
+        data = history.summary()
     ui.display.summary_panel(data)
 
 
@@ -207,12 +210,12 @@ def cmd_clear(args):
 
 def cmd_report(args):
     sid = int(args.id)
-    history = History()
-    row = history.get(sid)
-    if not row:
-        ui.display.err(f"Sessão {sid} não encontrada.")
-        sys.exit(1)
-    prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
+    with History() as history:
+        row = history.get(sid)
+        if not row:
+            ui.display.err(f"Sessão {sid} não encontrada.")
+            sys.exit(1)
+        prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
     rep = build_report(row, prev)
     html = render_report_html(rep)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".html", delete=False) as f:

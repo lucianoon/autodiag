@@ -35,7 +35,8 @@ def _session(**overrides: Any) -> Session:
 
 @pytest.fixture
 def history(tmp_path):
-    return History(path=tmp_path / "history.db")
+    with History(path=tmp_path / "history.db") as h:
+        yield h
 
 
 @pytest.fixture

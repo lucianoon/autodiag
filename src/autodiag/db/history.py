@@ -51,6 +51,17 @@ class History:
         self._con.row_factory = sqlite3.Row
         self._migrate()
 
+    def close(self) -> None:
+        # No Windows, a conexão aberta mantém o arquivo .db travado;
+        # fechar explicitamente permite mover/apagar o banco.
+        self._con.close()
+
+    def __enter__(self) -> History:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def _migrate(self):
         self._con.execute("""
             CREATE TABLE IF NOT EXISTS sessions (

@@ -33,7 +33,8 @@ def _session(**overrides: Any) -> Session:
 
 @pytest.fixture
 def history(tmp_path):
-    return History(path=tmp_path / "history.db")
+    with History(path=tmp_path / "history.db") as h:
+        yield h
 
 
 def test_save_returns_incrementing_ids(history):
@@ -169,17 +170,17 @@ def test_tags_migration_incremental(tmp_path):
     con.commit()
     con.close()
 
-    hist = History(path=db_path)
-    row = hist.get(1)
-    assert row is not None
-    assert row["tags"] is None
-    assert row["freeze_frame"] is None
+    with History(path=db_path) as hist:
+        row = hist.get(1)
+        assert row is not None
+        assert row["tags"] is None
+        assert row["freeze_frame"] is None
 
-    sid2 = hist.save(_session(tags=["novo"], freeze_frame={"rpm": 2400}))
-    r2 = hist.get(sid2)
-    assert r2 is not None
-    assert r2["tags"] == ["novo"]
-    assert r2["freeze_frame"] == {"rpm": 2400}
+        sid2 = hist.save(_session(tags=["novo"], freeze_frame={"rpm": 2400}))
+        r2 = hist.get(sid2)
+        assert r2 is not None
+        assert r2["tags"] == ["novo"]
+        assert r2["freeze_frame"] == {"rpm": 2400}
 
 
 def test_freeze_frame_roundtrip(history):
