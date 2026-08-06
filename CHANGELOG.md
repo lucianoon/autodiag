@@ -27,6 +27,13 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   (coluna `readiness`, migração incremental) e incluído no relatório HTML.
 - No modo demo, apagar os DTCs e escanear de novo reproduz o cenário de
   adulteração e dispara a detecção — o fluxo inteiro é testável sem hardware.
+- **Interface web instalável (PWA)**: manifest e ícone servidos em
+  `/static`, `theme-color` e favicon SVG — no celular, "Adicionar à tela
+  inicial" abre o AutoDiag em janela própria apontando para o notebook ou
+  Raspberry na mesma rede.
+- **Primeiros testes da API web** (`tests/test_web.py`, TestClient com banco
+  isolado): index, manifest, detalhe/busca de DTC cobrindo o catálogo novo,
+  summary e PATCH 404.
 - **Parecer de vistoria padronizado** no relatório (novo módulo
   [core/inspection.py](src/autodiag/core/inspection.py)): urgência, DTCs e a
   verificação de limpeza de códigos consolidados em um veredicto de quatro

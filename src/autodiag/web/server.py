@@ -15,6 +15,7 @@ load_dotenv(".env")
 
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from autodiag.core.config import Branding, get_branding, update_branding
 from autodiag.core.diagnosis import infer_urgency
@@ -31,6 +32,7 @@ from autodiag.elm327.reader import DTCRecord, list_ports
 app = FastAPI(title="AutoDiag")
 
 _STATIC = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
 _DEFAULT_BODY_FACTORY = Body(default_factory=dict)
 

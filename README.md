@@ -35,7 +35,7 @@ API ou acesso externo é necessário.
 | Evidência | O que demonstra |
 |---|---|
 | Publicado no [PyPI](https://pypi.org/project/autodiag/) | Empacotamento e distribuição reais |
-| 167 funções de teste | DTCs, PIDs, VIN, readiness, histórico, providers e interface web |
+| 184 funções de teste | DTCs, PIDs, VIN, readiness, histórico, providers e interface web |
 | `ruff` + `mypy` + pytest na CI | Qualidade automatizada a cada mudança |
 | `autodiag scan --demo` | Fluxo completo reproduzível sem hardware |
 | CLI + FastAPI + SSE + SQLite | Produto vertical, não apenas uma chamada de LLM |
