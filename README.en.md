@@ -47,6 +47,10 @@ external access is required.
   produce an auditable verdict — the classic signature of a scan wiped right
   before a used-car inspection. In demo mode, clear the DTCs and scan again
   to see the detection fire.
+- **Inspection verdict** on the HTML report: a standardized four-level call
+  (Approved / Approved with caveats / Re-inspection required / Failed)
+  consolidating urgency, DTCs and the code-clearing check — built for
+  used-car evaluation reports.
 - **Live PIDs** (mode 01): RPM, speed, engine and intake temperature, throttle
   position, MAF, short/long fuel trim bank 1, O2 sensor B1S1 voltage and fuel
   level.

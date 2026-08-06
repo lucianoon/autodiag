@@ -52,6 +52,10 @@ API ou acesso externo é necessário.
   última limpeza (PIDs 01/30/31) geram um veredicto auditável — o quadro
   clássico de scan apagado antes de uma vistoria de seminovo. No modo demo,
   apague os DTCs e escaneie de novo para ver a detecção em ação.
+- **Parecer de vistoria** no relatório HTML: veredicto padronizado em quatro
+  níveis (Aprovado / com ressalvas / Reinspeção necessária / Reprovado)
+  consolidando urgência, DTCs e a verificação de limpeza de códigos — pensado
+  para laudo de avaliação de seminovos.
 - **PIDs ao vivo** (modo 01): RPM, velocidade, temperatura do motor e da
   admissão, posição da borboleta, MAF, fuel trim curto/longo B1, tensão da
   sonda O2 B1S1 e nível de combustível.

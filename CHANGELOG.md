@@ -27,6 +27,13 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   (coluna `readiness`, migração incremental) e incluído no relatório HTML.
 - No modo demo, apagar os DTCs e escanear de novo reproduz o cenário de
   adulteração e dispara a detecção — o fluxo inteiro é testável sem hardware.
+- **Parecer de vistoria padronizado** no relatório (novo módulo
+  [core/inspection.py](src/autodiag/core/inspection.py)): urgência, DTCs e a
+  verificação de limpeza de códigos consolidados em um veredicto de quatro
+  níveis — Aprovado / Aprovado com ressalvas / Reinspeção necessária /
+  Reprovado — com razões e recomendação, em banner no topo do laudo. Inclui a
+  ressalva de escopo (diagnóstico eletrônico OBD2, não substitui inspeção
+  mecânica).
 
 ## [0.3.0] — 2026-08-06
 

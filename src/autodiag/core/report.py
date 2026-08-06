@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from autodiag.core.config import Branding, get_branding
 from autodiag.core.dtc import lookup
+from autodiag.core.inspection import build_inspection_verdict
 
 
 @dataclass(frozen=True)
@@ -454,6 +455,26 @@ def render_report_html(report: Report) -> str:
             "</div></div>"
         )
 
+    def inspection_block() -> str:
+        verdict = build_inspection_verdict(s)
+        meta = {
+            "aprovado": ("success", "✓"),
+            "aprovado_com_ressalvas": ("warning", "△"),
+            "reinspecionar": ("warning", "🔄"),
+            "reprovado": ("danger", "✕"),
+        }
+        cls, icon = meta.get(verdict.verdict, ("secondary", "•"))
+        reasons = "".join(f"<li>{esc(r)}</li>" for r in verdict.reasons)
+        return (
+            f"<div class='alert alert-{cls} py-3 mb-3'>"
+            f"<div class='fw-bold fs-5 mb-1'>{icon} Parecer de vistoria: {esc(verdict.label)}</div>"
+            + (f"<ul class='mb-1 ps-3 small'>{reasons}</ul>" if reasons else "")
+            + f"<div class='small'>{esc(verdict.recommendation)}</div>"
+            "<div class='small text-muted mt-1'>Parecer restrito ao diagnóstico eletrônico "
+            "OBD2 (motor/emissões); não substitui inspeção mecânica e estrutural.</div>"
+            "</div>"
+        )
+
     comparison_html = ""
     if report.previous:
         comparison_html = (
@@ -568,6 +589,8 @@ def render_report_html(report: Report) -> str:
       <h2 class="h4 mb-1">{esc(s.get("vehicle_label") or "Veículo")}</h2>
       <div class="text-muted small">Data: {esc(s.get("ts"))} · VIN: {esc(s.get("vin") or "—")}</div>
     </div>
+
+    {inspection_block()}
 
     <div class="row">
       {kpi("Urgência", badge(s.get("urgency") or "informativo", sev_cls))}
