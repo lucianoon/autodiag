@@ -63,6 +63,26 @@ class MonitorStatus:
         return data
 
 
+@dataclass
+class FreezeFrame:
+    raw: str = ""
+    dtc_code: str | None = None
+    rpm: int | None = None
+    coolant_temp_c: int | None = None
+    speed_kmh: int | None = None
+    engine_load_pct: float | None = None
+    throttle_pct: float | None = None
+    maf_g_s: float | None = None
+    fuel_trim_short_b1: float | None = None
+    fuel_trim_long_b1: float | None = None
+    o2_b1s1_v: float | None = None
+    intake_temp_c: int | None = None
+    mileage_km: int | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
 _PORT_KEYWORDS = (
     "obdii",
     "obd-ii",
@@ -139,6 +159,20 @@ def _decode_dtcs(
         code = prefix_map.get(chunk[0], "P?") + chunk[1:]
         dtcs.append(DTCRecord(code=code.upper(), status=status))
     return dtcs
+
+
+def _decode_single_dtc(chunk: str) -> str | None:
+    if len(chunk) < 4:
+        return None
+    prefix_map = {
+        "0": "P0", "1": "P1", "2": "P2", "3": "P3",
+        "4": "C0", "5": "C1", "6": "C2", "7": "C3",
+        "8": "B0", "9": "B1", "A": "B2", "B": "B3",
+        "C": "U0", "D": "U1", "E": "U2", "F": "U3",
+    }
+    if chunk.upper() == "0000":
+        return None
+    return prefix_map.get(chunk[0].upper(), "P?") + chunk[1:].upper()
 
 
 def _extract_payload(raw: str, response_tag: str) -> str | None:
@@ -269,6 +303,124 @@ class ELM327Reader:
     def clear_dtcs(self) -> bool:
         response = self._cmd("04")
         return "44" in response or "OK" in response.upper()
+
+    def get_freeze_frame(self) -> FreezeFrame:
+        raw = self._cmd("02")
+        frame = FreezeFrame(raw=raw)
+        if "NO DATA" in raw or "NODATA" in raw:
+            return frame
+        compact = raw.upper().replace(" ", "").replace("\r", "").replace("\n", "")
+        tag = compact.find("42")
+        body = compact[tag + 2 :] if tag != -1 else compact
+        # Múltiplos formatos de mercado. Tenta vários offsets (start) de
+        # interpretação e escolhe o que parsear mais dados plausíveis.
+        _1B = {"04", "05", "06", "07", "0D", "0E", "11", "0F", "14"}
+        _2B = {"0C", "10", "44", "31"}
+        _ALL = _1B | _2B | {"02"}
+
+        def _try(start: int) -> dict[str, str]:
+            out: dict[str, str] = {}
+            i = start
+            skips = 0
+            while i + 2 <= len(body):
+                pid = body[i : i + 2]
+                if pid in _1B and i + 4 <= len(body):
+                    out[pid] = body[i + 2 : i + 4]
+                    i += 4
+                    skips = 0
+                    continue
+                if pid in _2B and i + 6 <= len(body):
+                    out[pid] = body[i + 2 : i + 6]
+                    i += 6
+                    skips = 0
+                    continue
+                if pid == "02" and i + 6 <= len(body):
+                    out["02"] = body[i + 2 : i + 6]
+                    i += 6
+                    skips = 0
+                    continue
+                # Byte de padding / stray ("00", etc) — avança 2 chars até
+                # encontrar um PID conhecido, com limite.
+                if pid not in _ALL and skips < 3:
+                    i += 2
+                    skips += 1
+                    continue
+                break
+            return out
+
+        candidates: list[tuple[int, int, str | None, dict[str, str]]] = []
+        attempts: list[tuple[int, int]] = [
+            # (start_parse, dtc_bytes_slice_end)
+            (0, 0),
+            (4, 4),
+            (3, 4),
+            (6, 6),
+            (2, 4),
+            (5, 4),
+            (7, 6),
+            (8, 6),
+        ]
+        for start, dtc_end in attempts:
+            if start > len(body):
+                continue
+            pids = _try(start)
+            dtc_val: str | None = None
+            if dtc_end and 4 <= dtc_end <= len(body):
+                dtc_val = _decode_single_dtc(body[:dtc_end][:4])
+            if "02" in pids and not dtc_val:
+                dtc_val = _decode_single_dtc(pids["02"])
+            score = len(pids) + (1 if dtc_val else 0)
+            candidates.append((score, start, dtc_val, pids))
+        if not candidates:
+            return frame
+        candidates.sort(key=lambda r: (-r[0], r[1]))
+        _score, _start, best_dtc, best_pids = candidates[0]
+        frame.dtc_code = best_dtc
+
+        def _b(pid: str) -> str | None:
+            return best_pids.get(pid)
+
+        def _u1(pid: str) -> int | None:
+            v = _b(pid)
+            if not v or len(v) < 2:
+                return None
+            try:
+                return int(v[:2], 16)
+            except ValueError:
+                return None
+
+        def _u2(pid: str) -> int | None:
+            v = _b(pid)
+            if not v or len(v) < 4:
+                return None
+            try:
+                return int(v[:4], 16)
+            except ValueError:
+                return None
+
+        if (v := _u1("04")) is not None:
+            frame.engine_load_pct = round(v * 100 / 255, 1)
+        if (v := _u2("0C")) is not None:
+            frame.rpm = v // 4
+        if (v := _u1("0D")) is not None:
+            frame.speed_kmh = v
+        if (v := _u1("05")) is not None:
+            frame.coolant_temp_c = v - 40
+        if (v := _u1("11")) is not None:
+            frame.throttle_pct = round(v * 100 / 255, 1)
+        if (v := _u2("10")) is not None:
+            frame.maf_g_s = round(v / 100, 2)
+        if (v := _u1("06")) is not None:
+            frame.fuel_trim_short_b1 = round((v - 128) * 100 / 128, 1)
+        if (v := _u1("07")) is not None:
+            frame.fuel_trim_long_b1 = round((v - 128) * 100 / 128, 1)
+        if (v := _u1("14")) is not None:
+            frame.o2_b1s1_v = round(v / 200, 2)
+        if (v := _u1("0F")) is not None:
+            frame.intake_temp_c = v - 40
+        if (v := _u2("31")) is not None:
+            frame.mileage_km = v
+        return frame
 
     def get_live_pids(self) -> LivePIDs:
         pids = LivePIDs()

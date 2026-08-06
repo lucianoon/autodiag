@@ -53,7 +53,8 @@ class FakeReader(ELM327Reader):
         super().__init__(port="fake")
         self._responses = responses
 
-    def _cmd(self, cmd: str, wait: float = 0.3) -> str:
+    def _cmd(self, cmd: str, wait: float = 0.3, retries: int = 0) -> str:
+        _ = (wait, retries)
         return self._responses.get(cmd, "NO DATA")
 
 
@@ -108,3 +109,53 @@ class TestGetDtcsViaFake:
     def test_clear_dtcs_ok(self):
         reader = FakeReader({"04": "44"})
         assert reader.clear_dtcs() is True
+
+
+class TestFreezeFrame:
+    def test_decodes_p0171_freeze(self):
+        """Comando 02 (Freeze Frame): resposta `42 <PID 02 + DTC 4B>` seguido de
+        blocos (PID + 1B ou + 2B) conforme o parser."""
+        reader = FakeReader({
+            # DTC congelado: PID 02 + 01 71 00 (4 bytes) => P0171
+            # Depois (PID 0C 2B): 25 80 -> rpm = 9600/4 = 2400
+            # (PID 05 1B): 8A -> 138-40 = 98°C
+            # (PID 0D 1B): 36 = 54 km/h
+            # (PID 04 1B): 70 = 112*100/255 = 43.9
+            # (PID 11 1B): 32 = 50*100/255 = 19.6 (throttle)
+            # (PID 10 2B): 00 DC = 220/100 = 2.2 g/s
+            # (PID 06 1B): 98 = (152-128)*100/128 = 18.75
+            # (PID 07 1B): 8C = (140-128)*100/128 = 9.375
+            # (PID 14 1B): 18 = 24/200 = 0.12 V
+            # (PID 0F 1B): 4C = 76-40 = 36°C
+            "02": (
+                "42 02 01 71 00"
+                " 0C 25 80"
+                " 05 8A"
+                " 0D 36"
+                " 04 70"
+                " 11 32"
+                " 10 00 DC"
+                " 06 98"
+                " 07 8C"
+                " 14 18"
+                " 0F 4C"
+            ),
+        })
+        ff = reader.get_freeze_frame()
+        assert ff.dtc_code == "P0171"
+        assert ff.rpm == 2400
+        assert ff.coolant_temp_c == 98
+        assert ff.speed_kmh == 54
+        assert abs(float(ff.engine_load_pct or 0) - 43.9) < 0.2
+        assert abs(float(ff.throttle_pct or 0) - 19.6) < 0.3
+        assert ff.maf_g_s == 2.2
+        assert abs(float(ff.fuel_trim_short_b1 or 0) - 18.8) < 0.1
+        assert abs(float(ff.fuel_trim_long_b1 or 0) - 9.4) < 0.1
+        assert ff.o2_b1s1_v == 0.12
+        assert ff.intake_temp_c == 36
+
+    def test_no_data_returns_empty_frame(self):
+        ff = FakeReader({"02": "NO DATA"}).get_freeze_frame()
+        assert ff.dtc_code is None
+        assert ff.rpm is None
+

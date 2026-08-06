@@ -5,6 +5,71 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+
+- **Branding do relatório** (módulo `core/config.py`, arquivos em
+  `~/.autodiag/config.json`): 7 campos personalizáveis (nome oficina, mecânico,
+  telefone, e-mail, endereço, URL logo, header da seção de notas), com
+  endpoints `GET /api/branding` + `PUT /api/branding` e modal ⚙ **Branding**
+  na UI web. Bloco de cabeçalho estilo GitHub Dark renderizado no topo do
+  relatório HTML.
+- **Notas e Tags editáveis por atendimento**: novo campo `tags: list[str]` no
+  dataclass `Session`, migração incremental (`ALTER TABLE ADD COLUMN`),
+  `History.update_session(sid, notes=, tags=)` com PATCH parcial, endpoint
+  `PATCH /api/session/{sid}`, modal ✎ de edição na UI, preview de tags (≤3
+  badges info) + notes truncada em 48 chars no Histórico, painel no Dashboard.
+  Coluna `tags` adicionada ao CSV export (UTF-8 BOM para Excel).
+- **Onboarding por persona**: modal ❔ **Guia rápido** na navbar, 3 cards de
+  perfil (oficina / vistoriador seminovos / entusiasta) com casos de uso,
+  abre automaticamente no primeiro acesso quando `GET /api/history?limit=1`
+  retorna vazio.
+- **Freeze Frame Modo 02 OBD2**: dataclass `FreezeFrame`, parser por PID e
+  tamanho (1B / 2B / 4B para DTC) dos 11 PIDs mais úteis (RPM, coolant,
+  speed, engine load, throttle, MAF, fuel trims curto/longo B1, O2 B1S1,
+  intake temp, mileage), helper `_decode_single_dtc`, implementação demo no
+  `SimulatedELM327` (P0171 clássico), evento SSE `freeze_frame` emitido no
+  `GET /api/scan/stream`, coluna `freeze_frame TEXT` migrada incremental,
+  renderização no CLI (`ui.freeze_frame_panel`), no relatório (tabela
+  antes da análise IA) e na UI web (painel paralelo a PIDs + badge ❄ no
+  Dashboard / Histórico / linha do tempo da aba Evolução).
+- **Captura contínua live data 60s** na aba **Scan**: novo botão 📊
+  **Gravar 60s (live PIDs)** usa endpoint SSE `GET /api/scan/live?duration=`,
+  lê PIDs a cada 1s via thread de fundo e renderiza 4 séries SVG polyline
+  independentes (RPM + Coolant lado esquerdo, MAF + FT curto B1 lado
+  direito), com contador e botão de parada.
+- Triagem guiada estruturada (causas prováveis, testes sugeridos e o que não
+  fazer) gerada a partir de DTCs + PIDs e persistida no histórico.
+- Relatório HTML por sessão (`/report/{id}`) com botão de download
+  (`/report/{id}/download`) e comparação automática com a sessão anterior do
+  mesmo VIN.
+- Comando `autodiag report <id> [--open]` para gerar e abrir o relatório em
+  HTML sem depender do servidor web.
+- Endpoint `GET /api/session/{id}`, `GET /api/vehicles`,
+  `GET /api/vehicle/{vin}/history`, `GET /api/vehicle/{vin}/trends` (estatísticas
+  e alertas por parâmetro), `GET /api/vehicle/{vin}/export.csv` e
+  `GET /api/vehicle/{vin}/export.json` para consumo externo e oficina.
+- Módulo [core/trend.py](src/autodiag/core/trend.py) com estatísticas por
+  parâmetro (média, desvio-padrão, regressão linear simples via slope,
+  z-score ≥ 2σ para outliers), detecção de recorrência de DTCs e alertas
+  semânticos por threshold (high_bad / sym_bad / range_good).
+- Nova aba **Evolução** na interface web: seleção de VIN, cards de tendência
+  com sparkline SVG inline, seta de direção, variação percentual, σ e
+  alertas de outlier/threshold; painel superior com alertas agregados;
+  DTCs recorrentes (≥2 aparições); linha do tempo completa dos scans;
+  botões de exportação CSV e JSON.
+
+### Alterado
+
+- A página de Histórico e o Dashboard passam a oferecer links diretos para
+  abrir e baixar relatórios.
+- A comparação do relatório agora inclui delta e variação percentual e filtra
+  mudanças pequenas por thresholds.
+
+### Corrigido
+
+- `summary().last.dtc_codes` agora retorna lista (e não JSON bruto), alinhando
+  o formato com `history()` e evitando inconsistência no Dashboard.
+
 ## [0.2.1] — 2026-07-27
 
 ### Corrigido

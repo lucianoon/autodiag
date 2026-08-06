@@ -5,6 +5,7 @@ from autodiag.elm327.reader import (
     DTCRecord,
     ELM327Error,
     ELM327Reader,
+    FreezeFrame,
     LivePIDs,
     MonitorStatus,
 )
@@ -21,6 +22,7 @@ class OBDReader(Protocol):
     def get_pending_dtcs(self) -> list[DTCRecord]: ...
     def get_permanent_dtcs(self) -> list[DTCRecord]: ...
     def get_monitor_status(self) -> MonitorStatus: ...
+    def get_freeze_frame(self) -> FreezeFrame: ...
     def get_control_module_voltage(self) -> float | None: ...
     def get_supported_pids(self) -> list[str]: ...
     def clear_dtcs(self) -> bool: ...
@@ -42,7 +44,9 @@ __all__ = [
     "DTCRecord",
     "ELM327Error",
     "ELM327Reader",
+    "FreezeFrame",
     "LivePIDs",
+    "MonitorStatus",
     "OBDReader",
     "SimulatedELM327",
     "create_reader",

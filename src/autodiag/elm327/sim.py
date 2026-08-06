@@ -7,7 +7,7 @@ lambda presa em tensão baixa — o quadro clássico de entrada falsa de ar.
 """
 import random
 
-from autodiag.elm327.reader import DTCRecord, LivePIDs, MonitorStatus
+from autodiag.elm327.reader import DTCRecord, FreezeFrame, LivePIDs, MonitorStatus
 
 SIM_VIN = "9BWAB45U0KP042788"  # 9BW = Volkswagen Brasil, K = 2019
 
@@ -55,6 +55,23 @@ class SimulatedELM327:
             mil_on=bool(self._dtcs),
             dtc_count=len(self._dtcs),
             raw="SIMULATED",
+        )
+
+    def get_freeze_frame(self) -> FreezeFrame:
+        return FreezeFrame(
+            raw="SIMULATED FREEZE FRAME",
+            dtc_code=self._dtcs[0].code if self._dtcs else None,
+            rpm=1720,
+            coolant_temp_c=98,
+            speed_kmh=54,
+            engine_load_pct=43.9,
+            throttle_pct=19.6,
+            maf_g_s=2.2,
+            fuel_trim_short_b1=18.8,
+            fuel_trim_long_b1=9.4,
+            o2_b1s1_v=0.12,
+            intake_temp_c=36,
+            mileage_km=68420,
         )
 
     def get_control_module_voltage(self) -> float | None:
