@@ -5,6 +5,8 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+## [0.4.0] — 2026-08-06
+
 ### Adicionado
 
 - **Base de DTCs expandida de 65 para 566 códigos**: novo módulo
@@ -202,7 +204,8 @@ Primeira versão publicada.
 - Saída no console legado do Windows quebrava com `UnicodeEncodeError`
   (streams agora forçados a UTF-8).
 
-[Não publicado]: https://github.com/lucianoon/autodiag/compare/v0.3.0...HEAD
+[Não publicado]: https://github.com/lucianoon/autodiag/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lucianoon/autodiag/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/lucianoon/autodiag/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/lucianoon/autodiag/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lucianoon/autodiag/compare/v0.1.0...v0.2.0
