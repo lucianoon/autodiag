@@ -30,6 +30,7 @@ load_dotenv(".env")
 
 from autodiag import ui
 from autodiag.core.diagnosis import infer_urgency
+from autodiag.core.readiness import build_readiness_summary
 from autodiag.core.report import build_report, render_report_html
 from autodiag.core.triage import build_guided_triage
 from autodiag.core.vehicle import VehicleProfile, decode_vin_local, decode_vin_nhtsa
@@ -90,6 +91,17 @@ async def cmd_scan(args):
         permanent_dtcs = reader.get_permanent_dtcs()
         all_dtcs = dtcs + pending_dtcs + permanent_dtcs
         ui.display.dtcs_table(all_dtcs)
+
+        readiness: dict | None = None
+        try:
+            readiness = build_readiness_summary(
+                monitor_status,
+                warmups_since_clear=reader.get_warmups_since_clear(),
+                distance_since_clear_km=reader.get_distance_since_clear(),
+            )
+            ui.display.readiness_panel(readiness)
+        except Exception:
+            readiness = None
 
         freeze_frame: dict | None = None
         try:
@@ -159,6 +171,7 @@ async def cmd_scan(args):
             km=km,
             notes=notes,
             freeze_frame=freeze_frame,
+            readiness=readiness,
         )
         with History() as history:
             sid = history.save(session)

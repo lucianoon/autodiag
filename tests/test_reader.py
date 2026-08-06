@@ -159,3 +159,63 @@ class TestFreezeFrame:
         assert ff.dtc_code is None
         assert ff.rpm is None
 
+
+
+class TestMonitorStatus:
+    def test_parses_spark_readiness_bytes(self):
+        # A=0x00 (MIL off, 0 DTCs); B=0x27 (contínuos suportados, combustível
+        # incompleto, centelha); C=0xE5 (cat/EVAP/sonda/aquecedor/EGR
+        # suportados); D=0x05 (catalisador e EVAP incompletos).
+        reader = FakeReader({"0101": "41 01 00 27 E5 05"})
+        status = reader.get_monitor_status()
+        assert status.mil_on is False
+        assert status.dtc_count == 0
+        assert status.ignition == "spark"
+        assert status.monitors["Sistema de combustível"] is False
+        assert status.monitors["Falha de ignição (misfire)"] is True
+        assert status.monitors["Catalisador"] is False
+        assert status.monitors["Sistema EVAP"] is False
+        assert status.monitors["Sonda lambda"] is True
+        assert set(status.incomplete_monitors) == {
+            "Sistema de combustível", "Catalisador", "Sistema EVAP",
+        }
+
+    def test_parses_compression_ignition_table(self):
+        # B=0x0F: contínuos suportados + bit3 (compressão); C=0x03: NMHC + NOx;
+        # D=0x02: NOx incompleto.
+        reader = FakeReader({"0101": "41 01 81 0F 03 02"})
+        status = reader.get_monitor_status()
+        assert status.mil_on is True
+        assert status.dtc_count == 1
+        assert status.ignition == "compression"
+        assert status.monitors["Catalisador NMHC"] is True
+        assert status.monitors["Pós-tratamento NOx/SCR"] is False
+
+    def test_short_payload_keeps_monitors_none(self):
+        reader = FakeReader({"0101": "41 01 02"})
+        status = reader.get_monitor_status()
+        assert status.dtc_count == 2
+        assert status.monitors is None
+        assert status.incomplete_monitors == []
+
+    def test_as_dict_includes_readiness_fields(self):
+        reader = FakeReader({"0101": "41 01 00 27 E5 05"})
+        data = reader.get_monitor_status().as_dict()
+        assert data["ignition"] == "spark"
+        assert "Catalisador" in data["monitors"]
+        assert "Catalisador" in data["incomplete_monitors"]
+
+
+class TestClearCounters:
+    def test_warmups_since_clear(self):
+        reader = FakeReader({"0130": "41 30 30"})
+        assert reader.get_warmups_since_clear() == 48
+
+    def test_distance_since_clear(self):
+        reader = FakeReader({"0131": "41 31 04 DE"})
+        assert reader.get_distance_since_clear() == 1246
+
+    def test_no_data_returns_none(self):
+        reader = FakeReader({})
+        assert reader.get_warmups_since_clear() is None
+        assert reader.get_distance_since_clear() is None

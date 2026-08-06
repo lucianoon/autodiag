@@ -213,6 +213,53 @@ def freeze_frame_panel(ff: dict):
         console.print(t)
 
 
+def readiness_panel(summary: dict):
+    monitors = summary.get("monitors") or {}
+    assessment = summary.get("clear_assessment") or {}
+    if not monitors and not assessment:
+        return
+
+    section("🛡 Prontidão dos monitores (readiness)")
+    if monitors:
+        t = Table(box=box.SIMPLE, show_header=True)
+        t.add_column("Monitor", style="dim")
+        t.add_column("Ciclo", justify="right")
+        for name, done in monitors.items():
+            state = "[green]completo[/]" if done else "[yellow]incompleto[/]"
+            t.add_row(escape(str(name)), state)
+        console.print(t)
+
+    extras = []
+    if summary.get("distance_since_clear_km") is not None:
+        extras.append(f"Distância desde a limpeza de DTCs: {summary['distance_since_clear_km']} km")
+    if summary.get("warmups_since_clear") is not None:
+        extras.append(f"Ciclos de aquecimento desde a limpeza: {summary['warmups_since_clear']}")
+    for line in extras:
+        console.print(f"  [dim]{escape(line)}[/]")
+
+    verdict = assessment.get("verdict")
+    if not verdict:
+        return
+    styles = {"suspeito": "red", "normal": "green", "inconclusivo": "yellow"}
+    titles = {
+        "suspeito": "⚠ Indício de limpeza recente de códigos",
+        "normal": "✓ Sem indício de limpeza recente",
+        "inconclusivo": "? Verificação inconclusiva",
+    }
+    body_lines = [escape(e) for e in assessment.get("evidence", [])]
+    recommendation = assessment.get("recommendation")
+    if recommendation:
+        body_lines += ["", f"[bold]{escape(recommendation)}[/]"]
+    console.print(
+        Panel(
+            "\n".join(body_lines) or "—",
+            title=f"{titles[verdict]} (confiança {assessment.get('confidence', '—')})",
+            border_style=styles.get(verdict, "white"),
+            box=box.ROUNDED,
+        )
+    )
+
+
 def history_table(sessions: list[dict]):
     if not sessions:
         warn("Nenhum diagnóstico registrado.")

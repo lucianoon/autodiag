@@ -35,7 +35,7 @@ API ou acesso externo é necessário.
 | Evidência | O que demonstra |
 |---|---|
 | Publicado no [PyPI](https://pypi.org/project/autodiag/) | Empacotamento e distribuição reais |
-| 136 funções de teste | DTCs, PIDs, VIN, histórico, providers e interface web |
+| 167 funções de teste | DTCs, PIDs, VIN, readiness, histórico, providers e interface web |
 | `ruff` + `mypy` + pytest na CI | Qualidade automatizada a cada mudança |
 | `autodiag scan --demo` | Fluxo completo reproduzível sem hardware |
 | CLI + FastAPI + SSE + SQLite | Produto vertical, não apenas uma chamada de LLM |
@@ -43,9 +43,15 @@ API ou acesso externo é necessário.
 ## O que ela faz hoje
 
 - **Leitura de DTCs** (modo 03) via ELM327, com decodificação dos códigos
-  P/C/B/U e consulta a uma base local com ~65 códigos comuns (descrição em
-  português, severidade, sistema e causas prováveis).
+  P/C/B/U e consulta a uma base local com **566 códigos** — 65 curados
+  manualmente + 501 gerados a partir das famílias padronizadas SAE J2012
+  (descrição em português, severidade, sistema e causas prováveis).
 - **Limpeza de DTCs** (modo 04), com confirmação.
+- **Prontidão dos monitores (readiness)** com **detecção de limpeza recente
+  de códigos**: monitores incompletos + zero DTCs + pouca distância desde a
+  última limpeza (PIDs 01/30/31) geram um veredicto auditável — o quadro
+  clássico de scan apagado antes de uma vistoria de seminovo. No modo demo,
+  apague os DTCs e escaneie de novo para ver a detecção em ação.
 - **PIDs ao vivo** (modo 01): RPM, velocidade, temperatura do motor e da
   admissão, posição da borboleta, MAF, fuel trim curto/longo B1, tensão da
   sonda O2 B1S1 e nível de combustível.

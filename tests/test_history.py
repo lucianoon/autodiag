@@ -193,3 +193,38 @@ def test_freeze_frame_roundtrip(history):
     assert row["freeze_frame"] == ff
     listed = history.list(limit=1)[0]
     assert listed["freeze_frame"] == ff
+
+
+def test_readiness_roundtrip(history):
+    rd = {
+        "ignition": "spark",
+        "monitors": {"Catalisador": False, "Sistema EVAP": False},
+        "incomplete": ["Catalisador", "Sistema EVAP"],
+        "distance_since_clear_km": 7,
+        "clear_assessment": {"verdict": "suspeito", "confidence": "alta"},
+    }
+    sid = history.save(_session(readiness=rd))
+    row = history.get(sid)
+    assert row is not None
+    assert row["readiness"] == rd
+
+
+def test_readiness_column_migrates_on_old_db(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "old2.db"
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "CREATE TABLE sessions (id INTEGER PRIMARY KEY, ts TEXT, vin TEXT, vehicle_label TEXT,"
+        " dtc_codes TEXT, urgency TEXT, rpm INTEGER, speed INTEGER, coolant_temp INTEGER,"
+        " maf REAL, fuel_trim_short REAL, fuel_trim_long REAL, o2 REAL, diagnosis TEXT,"
+        " cost_min INTEGER, cost_max INTEGER, km INTEGER, notes TEXT)"
+    )
+    con.commit()
+    con.close()
+
+    with History(path=db_path) as hist:
+        sid = hist.save(_session(readiness={"monitors": {"Catalisador": True}}))
+        row = hist.get(sid)
+        assert row is not None
+        assert row["readiness"] == {"monitors": {"Catalisador": True}}

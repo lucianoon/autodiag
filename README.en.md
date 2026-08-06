@@ -38,9 +38,15 @@ external access is required.
 ## What it does today
 
 - **DTC reading** (mode 03) over ELM327, decoding P/C/B/U codes and looking
-  them up in a local database of ~65 common codes (description, severity,
-  affected system and probable causes).
+  them up in a local database of **566 codes** — 65 hand-curated + 501
+  generated from the standardized SAE J2012 families (description, severity,
+  affected system and probable causes, in Portuguese).
 - **DTC clearing** (mode 04), with confirmation.
+- **Readiness monitors** with **recent-code-clearing detection**: incomplete
+  monitors + zero DTCs + low distance since last clear (PIDs 01/30/31)
+  produce an auditable verdict — the classic signature of a scan wiped right
+  before a used-car inspection. In demo mode, clear the DTCs and scan again
+  to see the detection fire.
 - **Live PIDs** (mode 01): RPM, speed, engine and intake temperature, throttle
   position, MAF, short/long fuel trim bank 1, O2 sensor B1S1 voltage and fuel
   level.

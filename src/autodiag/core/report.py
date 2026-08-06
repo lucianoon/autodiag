@@ -383,6 +383,77 @@ def render_report_html(report: Report) -> str:
             + "</tbody></table></div></div></div></div>"
         )
 
+    def readiness_block() -> str:
+        rd = s.get("readiness") or {}
+        if not isinstance(rd, dict) or not rd:
+            return ""
+        monitors = rd.get("monitors") or {}
+        rows = []
+        for name, done in monitors.items():
+            state = (
+                "<span class='text-success'>completo</span>"
+                if done
+                else "<span class='text-warning'>incompleto</span>"
+            )
+            rows.append(
+                f"<tr><td class='small text-muted'>{esc(name)}</td>"
+                f"<td class='small'>{state}</td></tr>"
+            )
+        extras = []
+        if rd.get("distance_since_clear_km") is not None:
+            extras.append(
+                f"Distância desde a limpeza de DTCs: <b>{esc(rd['distance_since_clear_km'])} km</b>"
+            )
+        if rd.get("warmups_since_clear") is not None:
+            extras.append(
+                f"Ciclos de aquecimento desde a limpeza: <b>{esc(rd['warmups_since_clear'])}</b>"
+            )
+        assessment = rd.get("clear_assessment") or {}
+        verdict_html = ""
+        verdict = assessment.get("verdict")
+        if verdict:
+            cls = {"suspeito": "danger", "normal": "success", "inconclusivo": "warning"}.get(
+                verdict, "secondary"
+            )
+            title = {
+                "suspeito": "⚠ Indício de limpeza recente de códigos",
+                "normal": "✓ Sem indício de limpeza recente",
+                "inconclusivo": "? Verificação inconclusiva",
+            }.get(verdict, verdict)
+            evidence = "".join(f"<li>{esc(e)}</li>" for e in assessment.get("evidence", []))
+            recommendation = assessment.get("recommendation") or ""
+            verdict_html = (
+                f"<div class='alert alert-{cls} small m-2 py-2'>"
+                f"<b>{title}</b> "
+                "<span class='text-muted'>"
+                f"(confiança {esc(assessment.get('confidence', '—'))})</span>"
+                + (f"<ul class='mb-1 mt-1 ps-3'>{evidence}</ul>" if evidence else "")
+                + (f"<div class='mt-1'>{esc(recommendation)}</div>" if recommendation else "")
+                + "</div>"
+            )
+        if not rows and not verdict_html:
+            return ""
+        table_html = (
+            "<div class='table-responsive'>"
+            "<table class='table table-sm table-dark align-middle mb-0' style='max-width: 640px;'>"
+            "<thead><tr><th>Monitor</th><th>Ciclo</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody></table></div>"
+            if rows
+            else ""
+        )
+        extras_html = (
+            f"<div class='small text-muted px-2 pt-2'>{' · '.join(extras)}</div>" if extras else ""
+        )
+        return (
+            "<div class='col-12'>"
+            "<div class='card'>"
+            "<div class='card-header small text-muted py-2'>"
+            "🛡 Prontidão dos monitores (readiness) e verificação de limpeza de códigos"
+            "</div>"
+            f"<div class='card-body p-0'>{table_html}{extras_html}{verdict_html}</div>"
+            "</div></div>"
+        )
+
     comparison_html = ""
     if report.previous:
         comparison_html = (
@@ -525,6 +596,7 @@ def render_report_html(report: Report) -> str:
       {comparison_html}
 
       {freeze_frame_block()}
+      {readiness_block()}
 
       <div class="col-12">
         <div class="card">

@@ -171,8 +171,21 @@ DTC_DATABASE: dict[str, DTCInfo] = {
 }
 
 
+def full_database() -> dict[str, DTCInfo]:
+    """Catálogo gerado (SAE J2012) sobreposto pela base curada, que tem precedência."""
+    from autodiag.core.dtc_catalog import build_catalog
+
+    return {**build_catalog(), **DTC_DATABASE}
+
+
 def lookup(code: str) -> DTCInfo | None:
-    return DTC_DATABASE.get(code.upper().strip())
+    normalized = code.upper().strip()
+    info = DTC_DATABASE.get(normalized)
+    if info is not None:
+        return info
+    from autodiag.core.dtc_catalog import build_catalog
+
+    return build_catalog().get(normalized)
 
 
 def severity_color(severity: str) -> str:

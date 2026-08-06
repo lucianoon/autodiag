@@ -183,6 +183,13 @@
           </div>
         </div>
 
+        <div class="col-md-6" id="scan-readiness-card" style="display:none">
+          <div class="card h-100">
+            <div class="card-header small text-muted py-2">🛡 Prontidão dos monitores (readiness)</div>
+            <div class="card-body p-0" id="scan-readiness-body"></div>
+          </div>
+        </div>
+
         <div class="col-12" id="scan-live-card" style="display:none">
           <div class="card">
             <div class="card-header small text-muted py-2 d-flex justify-content-between">
@@ -480,6 +487,43 @@ function renderFreeze(ff) {
   return filled ? html : '<span class="text-muted small p-2 d-block">Freeze frame vazio</span>';
 }
 
+function renderReadiness(r) {
+  if (!r || typeof r !== 'object') return '<span class="text-muted small p-2 d-block">Sem dados de prontidão</span>';
+  const monitors = r.monitors || {};
+  let html = '';
+  const names = Object.keys(monitors);
+  if (names.length) {
+    html += '<table class="table table-sm mb-0"><thead><tr><th>Monitor</th><th>Ciclo</th></tr></thead><tbody>';
+    for (const name of names) {
+      const done = monitors[name];
+      html += `<tr><td class="small text-muted">${esc(name)}</td>
+        <td class="small">${done ? '<span class="text-success">completo</span>' : '<span class="text-warning">incompleto</span>'}</td></tr>`;
+    }
+    html += '</tbody></table>';
+  }
+  const extras = [];
+  if (r.distance_since_clear_km != null) extras.push(`Distância desde a limpeza de DTCs: <b>${r.distance_since_clear_km} km</b>`);
+  if (r.warmups_since_clear != null) extras.push(`Ciclos de aquecimento desde a limpeza: <b>${r.warmups_since_clear}</b>`);
+  if (extras.length) html += `<div class="small text-muted px-2 pt-2">${extras.join(' · ')}</div>`;
+
+  const a = r.clear_assessment;
+  if (a && a.verdict) {
+    const cls = { suspeito: 'danger', normal: 'success', inconclusivo: 'warning' }[a.verdict] || 'secondary';
+    const title = {
+      suspeito: '⚠ Indício de limpeza recente de códigos',
+      normal: '✓ Sem indício de limpeza recente',
+      inconclusivo: '? Verificação inconclusiva',
+    }[a.verdict];
+    const evidence = (a.evidence || []).map(e => `<li>${esc(e)}</li>`).join('');
+    html += `<div class="alert alert-${cls} small m-2 mb-2 py-2">
+      <b>${title}</b> <span class="text-muted">(confiança ${esc(a.confidence || '—')})</span>
+      ${evidence ? `<ul class="mb-1 mt-1 ps-3">${evidence}</ul>` : ''}
+      ${a.recommendation ? `<div class="mt-1">${esc(a.recommendation)}</div>` : ''}
+    </div>`;
+  }
+  return html || '<span class="text-muted small p-2 d-block">Sem dados de prontidão</span>';
+}
+
 function renderVehicleStatus(ev) {
   const monitor = ev.monitor_status || {};
   const voltage = ev.battery_voltage == null ? '—' : `${ev.battery_voltage.toFixed(1)} V`;
@@ -661,7 +705,7 @@ async function loadPorts() {
 function startScan() {
   if (scanActive) return;
   logClear();
-  ['scan-health-card','scan-supported-card','scan-dtcs-card','scan-pids-card','scan-triage-card','scan-analysis-card','scan-freeze-card','scan-live-card'].forEach(id =>
+  ['scan-health-card','scan-supported-card','scan-dtcs-card','scan-pids-card','scan-triage-card','scan-analysis-card','scan-freeze-card','scan-readiness-card','scan-live-card'].forEach(id =>
     document.getElementById(id).style.display = 'none'
   );
 
@@ -723,6 +767,13 @@ function startScan() {
     if (ev.type === 'freeze_frame') {
       document.getElementById('scan-freeze-body').innerHTML = renderFreeze(ev.freeze_frame);
       document.getElementById('scan-freeze-card').style.display = '';
+    }
+
+    if (ev.type === 'readiness') {
+      document.getElementById('scan-readiness-body').innerHTML = renderReadiness(ev.readiness);
+      document.getElementById('scan-readiness-card').style.display = '';
+      const a = (ev.readiness || {}).clear_assessment || {};
+      if (a.verdict === 'suspeito') logLine('Indício de limpeza recente de DTCs detectado.', 'log-warn');
     }
 
     if (ev.type === 'analysis') {

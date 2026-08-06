@@ -52,7 +52,13 @@ class DTCRecord:
 class MonitorStatus:
     mil_on: bool | None = None
     dtc_count: int | None = None
+    ignition: str | None = None  # "spark" | "compression"
+    monitors: dict[str, bool] | None = None  # nome do monitor -> ciclo completo?
     raw: str = ""
+
+    @property
+    def incomplete_monitors(self) -> list[str]:
+        return [name for name, done in (self.monitors or {}).items() if not done]
 
     def as_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {"raw": self.raw}
@@ -60,7 +66,37 @@ class MonitorStatus:
             data["mil_on"] = self.mil_on
         if self.dtc_count is not None:
             data["dtc_count"] = self.dtc_count
+        if self.ignition is not None:
+            data["ignition"] = self.ignition
+        if self.monitors is not None:
+            data["monitors"] = dict(self.monitors)
+            data["incomplete_monitors"] = self.incomplete_monitors
         return data
+
+
+# Monitores contínuos (byte B do PID 01) e não-contínuos (bytes C/D),
+# com nomes distintos para ignição por centelha e por compressão (J1979).
+_CONTINUOUS_MONITORS = ("Falha de ignição (misfire)", "Sistema de combustível", "Componentes (CCM)")
+_SPARK_MONITORS = (
+    "Catalisador",
+    "Catalisador aquecido",
+    "Sistema EVAP",
+    "Sistema de ar secundário",
+    "Refrigerante do A/C",
+    "Sonda lambda",
+    "Aquecedor da sonda lambda",
+    "EGR/VVT",
+)
+_COMPRESSION_MONITORS = (
+    "Catalisador NMHC",
+    "Pós-tratamento NOx/SCR",
+    None,
+    "Pressão do turbo",
+    None,
+    "Sensor de gases de escape",
+    "Filtro de partículas (DPF)",
+    "EGR/VVT",
+)
 
 
 @dataclass
@@ -281,7 +317,39 @@ class ELM327Reader:
             a = int(payload[0:2], 16)
             status.mil_on = bool(a & 0x80)
             status.dtc_count = a & 0x7F
+        if payload and len(payload) >= 8:
+            b = int(payload[2:4], 16)
+            c = int(payload[4:6], 16)
+            d = int(payload[6:8], 16)
+            status.ignition = "compression" if b & 0x08 else "spark"
+            monitors: dict[str, bool] = {}
+            # Contínuos: bits 0-2 de B indicam suporte; bits 4-6, incompletude.
+            for i, name in enumerate(_CONTINUOUS_MONITORS):
+                if b & (1 << i):
+                    monitors[name] = not bool(b & (1 << (i + 4)))
+            # Não-contínuos: C indica suporte; D, incompletude (1 = incompleto).
+            table = _COMPRESSION_MONITORS if status.ignition == "compression" else _SPARK_MONITORS
+            for i, opt_name in enumerate(table):
+                if opt_name is not None and c & (1 << i):
+                    monitors[opt_name] = not bool(d & (1 << i))
+            status.monitors = monitors
         return status
+
+    def get_warmups_since_clear(self) -> int | None:
+        """Ciclos de aquecimento desde a última limpeza de DTCs (PID 30)."""
+        raw = self._cmd("0130")
+        payload = _extract_payload(raw, "4130")
+        if payload and len(payload) >= 2:
+            return int(payload[0:2], 16)
+        return None
+
+    def get_distance_since_clear(self) -> int | None:
+        """Distância (km) percorrida desde a última limpeza de DTCs (PID 31)."""
+        raw = self._cmd("0131")
+        payload = _extract_payload(raw, "4131")
+        if payload and len(payload) >= 4:
+            return int(payload[0:2], 16) * 256 + int(payload[2:4], 16)
+        return None
 
     def get_control_module_voltage(self) -> float | None:
         raw = self._cmd("ATRV")

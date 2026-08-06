@@ -5,6 +5,29 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+
+- **Base de DTCs expandida de 65 para 566 códigos**: novo módulo
+  [core/dtc_catalog.py](src/autodiag/core/dtc_catalog.py) gera as famílias
+  padronizadas SAE J2012 (quintetos de circuito por sensor, sextetos de sonda
+  lambda por banco/sensor, injetores e misfire por cilindro 1–12, solenoides
+  de câmbio A–E, módulos de rede U0xxx) com descrição PT-BR, severidade,
+  sistema e causas prováveis por tipo de falha. A base curada tem precedência
+  via `dtc.full_database()`; a busca `GET /api/dtc` cobre o catálogo inteiro.
+- **Prontidão dos monitores (readiness) completa**: o modo 01 PID 01 agora
+  decodifica os bytes B/C/D (monitores contínuos e não-contínuos, tabelas de
+  centelha e compressão), além dos PIDs 30 (ciclos de aquecimento desde a
+  limpeza) e 31 (distância desde a limpeza).
+- **Detecção de limpeza recente de códigos** (novo módulo
+  [core/readiness.py](src/autodiag/core/readiness.py)): zero DTCs + monitores
+  incompletos + pouca rodagem desde a limpeza geram veredicto estruturado
+  (`suspeito`/`normal`/`inconclusivo`, com confiança, evidências e
+  recomendação) — o quadro típico de scan apagado antes de vistoria de
+  seminovo. Exibido na CLI, na web (card no Scan), persistido no histórico
+  (coluna `readiness`, migração incremental) e incluído no relatório HTML.
+- No modo demo, apagar os DTCs e escanear de novo reproduz o cenário de
+  adulteração e dispara a detecção — o fluxo inteiro é testável sem hardware.
+
 ## [0.3.0] — 2026-08-06
 
 ### Adicionado

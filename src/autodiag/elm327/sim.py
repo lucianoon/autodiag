@@ -21,6 +21,7 @@ class SimulatedELM327:
     def __init__(self, seed: int | None = None):
         self._rng = random.Random(seed)
         self._dtcs = [DTCRecord("P0171"), DTCRecord("P0300")]
+        self._cleared = False
 
     # ── conexão ──────────────────────────────────────────────────
 
@@ -51,11 +52,32 @@ class SimulatedELM327:
         return []
 
     def get_monitor_status(self) -> MonitorStatus:
+        # Após uma limpeza de DTCs, os monitores voltam a "incompleto" até o
+        # veículo cumprir os ciclos de condução — o quadro típico de um scan
+        # apagado antes de uma vistoria.
+        complete = not self._cleared
         return MonitorStatus(
             mil_on=bool(self._dtcs),
             dtc_count=len(self._dtcs),
+            ignition="spark",
+            monitors={
+                "Falha de ignição (misfire)": complete,
+                "Sistema de combustível": complete,
+                "Componentes (CCM)": True,
+                "Catalisador": complete,
+                "Sistema EVAP": complete,
+                "Sonda lambda": complete,
+                "Aquecedor da sonda lambda": complete,
+                "EGR/VVT": complete,
+            },
             raw="SIMULATED",
         )
+
+    def get_warmups_since_clear(self) -> int | None:
+        return 2 if self._cleared else 48
+
+    def get_distance_since_clear(self) -> int | None:
+        return 7 if self._cleared else 1246
 
     def get_freeze_frame(self) -> FreezeFrame:
         return FreezeFrame(
@@ -94,6 +116,7 @@ class SimulatedELM327:
 
     def clear_dtcs(self) -> bool:
         self._dtcs = []
+        self._cleared = True
         return True
 
     def get_live_pids(self) -> LivePIDs:

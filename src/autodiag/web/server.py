@@ -18,7 +18,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 
 from autodiag.core.config import Branding, get_branding, update_branding
 from autodiag.core.diagnosis import infer_urgency
-from autodiag.core.dtc import DTC_DATABASE, lookup
+from autodiag.core.dtc import full_database, lookup
+from autodiag.core.readiness import build_readiness_summary
 from autodiag.core.report import build_report, render_report_html
 from autodiag.core.trend import build_vehicle_trends
 from autodiag.core.triage import build_guided_triage
@@ -231,7 +232,7 @@ async def api_dtc_search(q: str = Query("")):
     q_up = q.upper().strip()
     q_lo = q.lower().strip()
     results = []
-    for code, info in DTC_DATABASE.items():
+    for code, info in sorted(full_database().items()):
         if q_up in code or q_lo in info.description.lower():
             results.append(
                 {
@@ -314,6 +315,18 @@ async def api_scan_stream(
             all_dtcs = dtcs + pending_dtcs + permanent_dtcs
             send({"type": "dtcs", "dtcs": _dtc_payload(all_dtcs)})
 
+            send({"type": "status", "message": "Verificando prontidão dos monitores..."})
+            readiness: dict | None = None
+            try:
+                readiness = build_readiness_summary(
+                    monitor_status,
+                    warmups_since_clear=reader.get_warmups_since_clear(),
+                    distance_since_clear_km=reader.get_distance_since_clear(),
+                )
+                send({"type": "readiness", "readiness": readiness})
+            except Exception as _e:
+                readiness = None
+
             send({"type": "status", "message": "Freeze Frame (momento do DTC)..."})
             freeze_frame: dict | None = None
             try:
@@ -367,6 +380,7 @@ async def api_scan_stream(
                         km=None,
                         notes="",
                         freeze_frame=freeze_frame,
+                        readiness=readiness,
                     )
                 )
             send({"type": "saved", "session_id": sid, "urgency": urgency})
