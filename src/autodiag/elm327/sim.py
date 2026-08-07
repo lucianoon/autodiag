@@ -6,10 +6,49 @@ detectada (P0300): fuel trim de curto prazo alto, MAF baixo e sonda
 lambda presa em tensão baixa — o quadro clássico de entrada falsa de ar.
 """
 import random
+from typing import Any
 
+from autodiag.core.ev_support import (
+    PROP_COMBUSTION,
+    apply_hv_formula,
+    detectar_propulsao_por_vin,
+)
 from autodiag.elm327.reader import DTCRecord, FreezeFrame, LivePIDs, MonitorStatus
 
 SIM_VIN = "9BWAB45U0KP042788"  # 9BW = Volkswagen Brasil, K = 2019
+
+
+# Payloads brutos 2 bytes big-endian para cada marca simulada HV.
+# Aplicação via apply_hv_formula: ex SoC 52.3% U16*0.1 → 523.
+_SIM_BRAND_HV_RAW_SAMPLES: dict[str, dict[int, bytes]] = {
+    "BYD": {
+        # U16 * 0.1. → 52.3% = 523 → bytes 0x020B
+        0x0101: (int(52.3 / 0.1)).to_bytes(2, "big", signed=False),
+        0x0102: (int(398.6 / 0.1)).to_bytes(2, "big", signed=False),
+        0x0103: (int(-8.2 / 0.1)).to_bytes(2, "big", signed=True),
+        0x0104: (int((27.4 + 40) / 0.1)).to_bytes(2, "big", signed=True),
+        0x0105: (int(18.6 / 0.25)).to_bytes(2, "big", signed=True),
+        0x0106: (int(95.1 / 0.1)).to_bytes(2, "big", signed=False),
+    },
+    "GWM": {
+        0x0201: (int(64.8 / 0.1)).to_bytes(2, "big"),
+        0x0202: (int(402.0 / 0.1)).to_bytes(2, "big"),
+        0x0203: (int((33.1 + 40) / 0.1)).to_bytes(2, "big", signed=True),
+    },
+    "Tesla": {
+        # Tesla uses U16 * 0.05:
+        0x0301: (int(58.6 / 0.05)).to_bytes(2, "big"),
+        0x0302: (int(403.2 / 0.05)).to_bytes(2, "big"),
+        0x0303: (int(96.4 / 0.05)).to_bytes(2, "big"),
+    },
+    "Renault-Brasil": {
+        0x0401: (int(44.2 / 0.1)).to_bytes(2, "big"),
+        0x0402: (int(387.4 / 0.1)).to_bytes(2, "big"),
+    },
+    "Volkswagen": {
+        0x0501: (int(71.3 / 0.1)).to_bytes(2, "big"),
+    },
+}
 
 
 class SimulatedELM327:
@@ -133,3 +172,57 @@ class SimulatedELM327:
             intake_temp_c=31 + rng.randint(-2, 2),
             fuel_level_pct=round(58.0 + rng.uniform(-1.0, 1.0), 1),
         )
+
+    # ── UDS $22 HV simulado (batch EV-P3) ──────────────────────────
+
+    def read_high_voltage(
+        self,
+        fields: list[dict[str, Any]],
+        vin: str | None = None,
+    ) -> dict[str, Any]:
+        """Mesma assinatura de ``ELM327Reader.read_high_voltage``.
+
+        Se ``vin`` aponta para um WMI que tem dados HV de simulação
+        (BYD/GWM/Tesla/Renault-Brasil/VW EV), devolve dicionário com chaves
+        ``did_XXXX`` e nome do campo + valor numérico (o mesmo padrão dupla-chave
+        do leitor real). Para WMI ICE devolve ``{}`` vazio.
+        """
+        if not fields:
+            return {}
+        det_vin = vin or self.get_vin()
+        ev_info = detectar_propulsao_por_vin(det_vin)
+        if ev_info.propensao == PROP_COMBUSTION:
+            return {}
+        marca = ev_info.marca
+        samples: dict[int, bytes] | None = None
+        if marca:
+            samples = _SIM_BRAND_HV_RAW_SAMPLES.get(marca) or _SIM_BRAND_HV_RAW_SAMPLES.get(
+                marca.split("-")[0]
+            )
+        if not samples:
+            return {}
+        out: dict[str, Any] = {}
+        rng = self._rng
+        for field in fields:
+            did_int: int = int(field.get("id") or 0)
+            if did_int <= 0 or did_int not in samples:
+                continue
+            raw = samples[did_int]
+            formula = str(field.get("formula") or "")
+            name = str(field.get("name") or f"did_{did_int:04X}")
+            base_val = apply_hv_formula(raw, formula)
+            if base_val is None:
+                continue
+            # Introduz ruído realista (~±0.8%) para simular scan com temperatura
+            # de célula e corrente oscilando em tempo real.
+            jitter = 1.0 + rng.uniform(-0.008, 0.008)
+            if isinstance(base_val, int):
+                # Mantém int se era raw U16 sem escala
+                val: int | float = int(base_val * jitter)
+            else:
+                # Preserve 2 casas decimais das fórmulas padrão.
+                val = round(float(base_val) * jitter, 2)
+            key_hex = f"did_{did_int:04X}"
+            out[key_hex] = val
+            out[name] = val
+        return out

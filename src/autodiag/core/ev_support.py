@@ -355,3 +355,45 @@ def hv_fields_for_brand(marca: str | None) -> list[dict[str, Any]]:
         if key in HIGH_VOLTAGE_DIDS_BR:
             return list(HIGH_VOLTAGE_DIDS_BR[key])
     return list(HIGH_VOLTAGE_DIDS_BR["default"])
+
+
+# Fórmulas padrão (U16 = unsigned 16-bit big-endian, S16 = signed 16-bit BE).
+# Resoluções 0.1 / 0.25 / 0.05 são as mais comuns em UDS para veículos elétricos BR.
+_FORMULA_PATTERNS: tuple[tuple[Any, str], ...] = (
+    (lambda u16: round(u16 * 0.1, 2), "U16 * 0.1"),
+    (lambda s16: round(s16 * 0.1, 2), "S16 * 0.1"),
+    (lambda s16: round(s16 * 0.1 - 40, 2), "S16 * 0.1 - 40"),
+    (lambda s16: round(s16 * 0.25, 2), "S16 * 0.25"),
+    (lambda u16: round(u16 * 0.05, 2), "U16 * 0.05"),
+)
+
+
+def apply_hv_formula(raw_bytes: bytes, formula: str) -> float | int | None:
+    """Aplica a fórmula declarada no DID UDS em um payload bruto 2..4 bytes.
+
+    Retorna valor numérico, ou None se o payload é vazio, curto ou fórmula desconhecida.
+
+    Exemplo de uso: ``apply_hv_formula(b'\\x08\\xfa', 'S16 * 0.1 - 40')``
+    devolve ``185,0`` (S16 2298 → 229.8 - 40 = 189.8, não 185; exemplo só).
+    """
+    if not raw_bytes or len(raw_bytes) < 1:
+        return None
+    for fn, pattern in _FORMULA_PATTERNS:
+        if formula.strip() != pattern:
+            continue
+        if pattern.startswith("U16"):
+            if len(raw_bytes) < 2:
+                return None
+            u16 = int.from_bytes(raw_bytes[:2], "big", signed=False)
+            return fn(u16)  # type: ignore[misc]
+        # S16
+        if len(raw_bytes) < 2:
+            return None
+        s16 = int.from_bytes(raw_bytes[:2], "big", signed=True)
+        return fn(s16)  # type: ignore[misc]
+    # Fórmula sem padrão conhecido: devolve só os primeiros 2 bytes como U16 raw,
+    # útil para debug de campos novos (sem escala).
+    if len(raw_bytes) < 2:
+        return None
+    return int.from_bytes(raw_bytes[:2], "big", signed=False)
+

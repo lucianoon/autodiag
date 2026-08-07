@@ -1146,6 +1146,11 @@ function startScan() {
       document.getElementById('scan-freeze-card').style.display = '';
     }
 
+    if (ev.type === 'hv_data') {
+      const n = ev.count || 0;
+      logLine(`⚡ Alta Tensão: ${n} DID(s) UDS lidos → salvos em hv_data.`, 'log-ok');
+    }
+
     if (ev.type === 'readiness') {
       document.getElementById('scan-readiness-body').innerHTML = renderReadiness(ev.readiness);
       document.getElementById('scan-readiness-card').style.display = '';

@@ -653,6 +653,58 @@ async def api_scan_stream(
             final_label = manual_label or vehicle.label or "Veículo sem VIN"
             send({"type": "vin", "vin": vehicle.vin or "—", "vehicle": final_label})
 
+            # ── UDS $22 Alta Tensão (HV): query dos DIDs conhecidos da marca ──
+            ev_prop = detectar_propulsao_por_vin(final_vin)
+            hv_data: dict[str, Any] | None = None
+            if ev_prop.is_ev_any():
+                marca_hv = ev_prop.marca
+                campos = hv_fields_for_brand(marca_hv)
+                send({
+                    "type": "status",
+                    "message": (
+                        f"Veículo {ev_prop.propensao.upper()} detectado ({marca_hv or 'marca?'}). "
+                        f"Lendo campos HV via UDS $22 (AT SH 7BB)..."
+                    ),
+                })
+                try:
+                    reader_hv_result: dict[str, Any] = reader.read_high_voltage(
+                        campos,
+                        vin=final_vin,
+                    ) or {}
+                    if reader_hv_result:
+                        hv_data = dict(reader_hv_result)
+                        send({
+                            "type": "hv_data",
+                            "hv_data": hv_data,
+                            "ev_support_level": ev_prop.ev_support_level,
+                            "count": len({k for k in hv_data if k.startswith("did_")}),
+                        })
+                        total_dids = len([c for c in campos if c.get("id") and c["id"] > 0])
+                        msg = (
+                            f"Alta Tensão OK: {len({k for k in hv_data if k.startswith('did_')})}/"
+                            f"{total_dids} DIDs respondidos (UDS $22 broadcast)."
+                        )
+                        send({"type": "status", "message": msg})
+                    else:
+                        send({
+                            "type": "warn",
+                            "message": (
+                                "Campos HV: nenhuma ECU HV respondeu UDS $22 via ELM "
+                                "(ECU pode exigir seed-key ou interface J2534/CAN-FD). "
+                                "Campos ficarão N/D no relatório."
+                            ),
+                        })
+                except Exception as _hv_exc:  # nunca falha o scan por erro em HV
+                    send({
+                        "type": "warn",
+                        "message": (
+                            "Leitura HV abortada (ex: timeout ELM). Pode continuar "
+                            "com os campos OBD2 padrão. Erro: "
+                            f"{str(_hv_exc)[:120]}"
+                        ),
+                    })
+                    hv_data = None
+
             send({"type": "status", "message": "Lendo DTCs..."})
             dtcs = reader.get_dtcs()
             pending_dtcs = reader.get_pending_dtcs()
@@ -726,6 +778,7 @@ async def api_scan_stream(
                         notes="",
                         freeze_frame=freeze_frame,
                         readiness=readiness,
+                        hv_data=hv_data if hv_data else None,
                     )
                 )
             send({"type": "saved", "session_id": sid, "urgency": urgency})

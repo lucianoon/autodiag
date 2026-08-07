@@ -619,3 +619,107 @@ class ELM327Reader:
             return b"".join(chunks).decode("ascii", errors="ignore").strip().replace(">", "")
 
         return ""
+
+    # ── UDS $22 Alta Tensão (HV) via broadcast AT SH 7BB ─────────────
+
+    def read_high_voltage(
+        self,
+        fields: list[dict[str, Any]],
+        vin: str | None = None,
+    ) -> dict[str, Any]:
+        """Query DIDs UDS $22 (Read Data By Identifier) no CAN 11-bit 0x7BB (broadcast
+        funcional para UDS sem autenticação seed-key).
+
+        Recebe lista de campos com estrutura ``{id:int, name, unit, formula, description}``
+        (oriunda de ``autodiag.core.ev_support.hv_fields_for_brand``.
+
+        Retorna dict com chaves duplas para compatibilidade máxima com card HV:
+          * ``did_0101`` (hex 4 dígitos maiúsculas)
+          * nome do campo
+        Valor número ou N/A ou None.
+
+        ``vin`` não é usado aqui no leitor real mas serve apenas para a interface
+        (usado pelo ``SimulatedELM327``).
+        """
+        from autodiag.core.ev_support import (
+            PROP_COMBUSTION,  # noqa: F401
+            apply_hv_formula,
+        )
+
+        if not fields:
+            return {}
+        out: dict[str, Any] = {}
+        ids_tried = 0
+        ids_ok = 0
+        try:
+            # 1) Configura header para broadcast funcional 0x7BB (8 bytes, AT SH = Set
+            # Header. Liga CAN 11/29 bit header default depois volta AT SH 7E0 no final.
+            set_header = self._cmd("AT SH 7BB", wait=0.45, retries=1)
+            if "ERROR" in set_header.upper():
+                return out
+            # Desliga echo novamente por garantia
+            self._cmd("ATE0", wait=0.2)
+            for field in fields:
+                did_int: int = int(field.get("id") or 0)
+                if did_int <= 0:
+                    continue
+                if ids_tried >= 16:
+                    break  # limite p/ não travar scan em veículos que não respondem
+                ids_tried += 1
+                name: str = str(field.get("name") or f"did_{did_int:04X}")
+                formula: str = str(field.get("formula") or "")
+                payload_hex = f"{did_int:04X}"
+                # Service $22 Read Data By Identifier → 22 XX XX
+                cmd = f"22{payload_hex}"
+                raw_resp = self._cmd(cmd, wait=0.7, retries=1)
+                if (not raw_resp) or any(t in raw_resp.upper()
+                    for t in ("NO DATA", "NODATA", "UNABLE", "ERROR", "7F 22")):
+                    continue
+                # Limpa ruído
+                compact = (
+                    raw_resp.replace("\r", "")
+                    .replace("\n", " ")
+                    .replace("\t", " ")
+                    .strip()
+                    .upper()
+                )
+                # Busca resposta positiva: 62 XX YY … (service 22+40 = 62)
+                tokens = [t for t in compact.split(" ") if t]
+                start = 0
+                start = next(
+                    (i for i, tok in enumerate(tokens) if tok == "62"),
+                    -1,
+                )
+                if start < 0 or start + 3 > len(tokens):
+                    continue
+                # 62 XX XX YY YY... (did 2 bytes + payload de 2+ bytes)
+                try:
+                    did_back = int(f"{tokens[start+1]}{tokens[start+2]}", 16)
+                except ValueError:
+                    continue
+                if did_back != did_int and did_back:
+                    pass  # alguns retornam outro? Não interrompe
+                data_tokens = tokens[start + 3 : start + 3 + 4]
+                try:
+                    raw_bytes = bytes.fromhex("".join(data_tokens))
+                except ValueError:
+                    continue
+                value = apply_hv_formula(raw_bytes, formula)
+                if value is None:
+                    continue
+                ids_ok += 1
+                key_hex = f"did_{did_int:04X}"
+                out[key_hex] = value
+                if name:
+                    out[name] = value
+        finally:
+            # Sempre volta header para default (OBD2 0x7E0 = cabeçalho para
+            # powertrain). Ignora erros de retorno.
+            try:
+                self._cmd("AT SH 7E0", wait=0.2)
+            except Exception:
+                pass
+        if ids_tried > 0 and ids_ok == 0:
+            # Nenhum DID respondeu; retorna vazio {} por coerência
+            return {}
+        return out
