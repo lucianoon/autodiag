@@ -30,6 +30,10 @@ Abra `http://localhost:8000`, entre em **Scan**, marque **Modo demo** e
 **Sem análise IA**, e clique em **Iniciar Scan**. Nenhum adaptador, chave de
 API ou acesso externo é necessário.
 
+![Card de prontidão dos monitores OBD2 sinalizando quadro suspeito após limpeza recente de DTCs](docs/assets/autodiag-readiness.jpg)
+
+![Banner do parecer de vistoria no relatório da sessão, indicando o resultado da avaliação](docs/assets/autodiag-parecer-vistoria.jpg)
+
 ## Evidências rápidas
 
 | Evidência | O que demonstra |
