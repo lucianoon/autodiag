@@ -5,6 +5,34 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Corrigido (revisão pré-release das features abaixo)
+
+- **Segurança web**: CORS deixou de ser `*` (agora opt-in via
+  `AUTODIAG_CORS_ORIGINS`) e um middleware de Host confiável bloqueia DNS
+  rebinding/Host forjado (`AUTODIAG_ALLOWED_HOSTS` para domínio próprio).
+  Sem isso, qualquer site aberto no navegador lia o histórico e disparava
+  DELETEs.
+- **PDF sem SSRF/DoS**: o Chromium recebe o HTML via `set_content` em vez de
+  navegar para URL derivada do header Host; semáforo de 1 render simultâneo.
+- **Deploy**: Caddyfile reescrito em sintaxe válida (não subia), com
+  `basic_auth` documentado; imagem Docker não confia em `X-Forwarded-*` por
+  padrão; `PLAYWRIGHT_BROWSERS_PATH` legível pelo usuário non-root (o PDF
+  falhava na imagem oficial).
+- **EV**: request UDS no CAN ID correto por marca (79B BYD; antes usava o ID
+  de resposta 7BB, sem resposta possível) e restauração do broadcast 7DF —
+  num BEV real a leitura HV silenciava DTCs/PIDs do restante do scan; leitura
+  HV movida para o fim da fase de leitura; 9BM corrigido para Mercedes-Benz
+  do Brasil (não é Renault; caminhão diesel era classificado BEV) e regras VW
+  ID. migradas para `vin[6:8]` (as antigas eram inalcançáveis).
+- **LGPD**: o botão 🗑️ Excluir agora envia `purge=true` — a UI prometia
+  exclusão permanente mas fazia soft-delete, mantendo os dados no SQLite.
+- `playwright` saiu das dependências obrigatórias → extra `autodiag[pdf]`.
+- Notas com `&`/aspas saíam com escape duplo no laudo (`Silva &amp;amp; Cia`).
+- `logo_url` em data-URI não é mais truncado antes da validação (imagem
+  quebrada em todo laudo).
+- QR "baixe no celular" usa o IP de LAN quando o laudo é aberto em
+  localhost (antes apontava para o próprio celular do cliente).
+
 ### Adicionado
 
 - **Sistema de Personas (4 perfis de uso)**: módulo
