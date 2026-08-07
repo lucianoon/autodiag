@@ -5,6 +5,15 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Corrigido
+
+- O fluxo de demonstração da detecção de limpeza ("apague os DTCs no demo e
+  escaneie de novo") não funcionava fora dos testes: cada scan cria um
+  simulador novo e o estado de limpeza morria com a instância. O demo agora
+  persiste a limpeza num marcador em `~/.autodiag/demo_state.json` com
+  validade de 30 min (`create_reader(demo=True)`); instâncias diretas do
+  simulador (testes) continuam herméticas, sem tocar disco.
+
 ## [0.5.0] — 2026-08-07
 
 ### Corrigido (revisão pré-release das features abaixo)

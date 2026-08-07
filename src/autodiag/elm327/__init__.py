@@ -44,7 +44,10 @@ def create_reader(
 ) -> OBDReader:
     """Retorna o adaptador simulado quando ``demo=True``; caso contrário, o real."""
     if demo:
-        return SimulatedELM327()
+        # persist_state: a limpeza de DTCs no demo sobrevive entre execuções
+        # (CLI) e requisições (web) por 30 min — é o que permite demonstrar a
+        # detecção de limpeza recente com "apague e escaneie de novo".
+        return SimulatedELM327(persist_state=True)
     return ELM327Reader(port=port, wifi_host=wifi_host)
 
 

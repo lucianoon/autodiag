@@ -5,7 +5,11 @@ Simula um VW Gol 2019 com mistura pobre (P0171) e falha de ignição
 detectada (P0300): fuel trim de curto prazo alto, MAF baixo e sonda
 lambda presa em tensão baixa — o quadro clássico de entrada falsa de ar.
 """
+import json
+import os
 import random
+import time
+from pathlib import Path
 from typing import Any
 
 from autodiag.core.ev_support import (
@@ -51,16 +55,55 @@ _SIM_BRAND_HV_RAW_SAMPLES: dict[str, dict[int, bytes]] = {
 }
 
 
+# Validade do estado "DTCs apagados" do demo persistido em disco. Depois
+# disso o veículo simulado volta ao cenário padrão P0171/P0300.
+_DEMO_CLEARED_TTL_S = 30 * 60
+
+
+def _demo_state_path() -> Path:
+    home = os.environ.get("AUTODIAG_HOME")
+    base = Path(home).expanduser() if home else Path.home() / ".autodiag"
+    return base / "demo_state.json"
+
+
 class SimulatedELM327:
     """Mesma interface pública do ELM327Reader, com respostas sintéticas.
 
     Use ``seed`` para leituras determinísticas (testes).
+
+    ``persist_state=True`` (usado por ``create_reader(demo=True)``) grava a
+    limpeza de DTCs num marcador em disco com validade curta — sem isso,
+    "apague os DTCs e escaneie de novo" não funcionaria entre requisições
+    web ou execuções da CLI, já que cada scan cria um simulador novo.
+    Instanciar direto (testes) mantém o estado apenas em memória.
     """
 
-    def __init__(self, seed: int | None = None):
+    def __init__(self, seed: int | None = None, persist_state: bool = False):
         self._rng = random.Random(seed)
         self._dtcs = [DTCRecord("P0171"), DTCRecord("P0300")]
         self._cleared = False
+        self._persist = persist_state
+        if persist_state and self._read_persisted_cleared():
+            self._cleared = True
+            self._dtcs = []
+
+    def _read_persisted_cleared(self) -> bool:
+        try:
+            data = json.loads(_demo_state_path().read_text(encoding="utf-8"))
+            cleared_at = float(data.get("cleared_at") or 0)
+            return 0 < time.time() - cleared_at < _DEMO_CLEARED_TTL_S
+        except Exception:
+            return False
+
+    def _write_persisted_cleared(self) -> None:
+        try:
+            path = _demo_state_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps({"cleared_at": time.time()}), encoding="utf-8"
+            )
+        except Exception:
+            pass
 
     # ── conexão ──────────────────────────────────────────────────
 
@@ -156,6 +199,8 @@ class SimulatedELM327:
     def clear_dtcs(self) -> bool:
         self._dtcs = []
         self._cleared = True
+        if self._persist:
+            self._write_persisted_cleared()
         return True
 
     def get_live_pids(self) -> LivePIDs:

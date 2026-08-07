@@ -52,3 +52,46 @@ class TestCreateReader:
 
     def test_default_returns_real_reader(self):
         assert isinstance(create_reader(port="COM3"), ELM327Reader)
+
+
+class TestDemoClearedPersistence:
+    def test_cleared_state_survives_new_instance(self, tmp_path, monkeypatch):
+        """Regressão: 'apague os DTCs no demo e escaneie de novo' não
+        funcionava — cada scan (web ou CLI) cria um simulador novo e o
+        estado de limpeza morria com a instância."""
+        from autodiag.elm327 import create_reader
+
+        monkeypatch.setenv("AUTODIAG_HOME", str(tmp_path))
+        first = create_reader(demo=True)
+        assert first.get_dtcs()  # cenário padrão P0171/P0300
+        first.clear_dtcs()
+
+        second = create_reader(demo=True)  # nova instância = novo scan
+        assert second.get_dtcs() == []
+        status = second.get_monitor_status()
+        assert len(status.incomplete_monitors) >= 2
+        assert second.get_distance_since_clear() == 7
+
+    def test_expired_marker_returns_to_default_scenario(self, tmp_path, monkeypatch):
+        import json as _json
+        import time as _time
+
+        from autodiag.elm327 import create_reader
+
+        monkeypatch.setenv("AUTODIAG_HOME", str(tmp_path))
+        (tmp_path / "demo_state.json").write_text(
+            _json.dumps({"cleared_at": _time.time() - 3600}), encoding="utf-8"
+        )
+        reader = create_reader(demo=True)
+        assert len(reader.get_dtcs()) == 2
+
+    def test_direct_instances_stay_hermetic(self, tmp_path, monkeypatch):
+        """Testes que instanciam SimulatedELM327 direto não leem nem gravam
+        estado em disco."""
+        from autodiag.elm327.sim import SimulatedELM327
+
+        monkeypatch.setenv("AUTODIAG_HOME", str(tmp_path))
+        sim = SimulatedELM327(seed=1)
+        sim.clear_dtcs()
+        assert not (tmp_path / "demo_state.json").exists()
+        assert SimulatedELM327(seed=1).get_dtcs()  # nova instância volta ao padrão
