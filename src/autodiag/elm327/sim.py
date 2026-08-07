@@ -179,6 +179,7 @@ class SimulatedELM327:
         self,
         fields: list[dict[str, Any]],
         vin: str | None = None,
+        request_header: str = "7E4",
     ) -> dict[str, Any]:
         """Mesma assinatura de ``ELM327Reader.read_high_voltage``.
 

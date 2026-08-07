@@ -188,3 +188,17 @@ class TestEvHVFields:
 
     def test_hv_fields_none_default(self) -> None:
         assert len(hv_fields_for_brand(None)) >= 4
+
+
+class TestHvRequestHeader:
+    def test_byd_uses_bms_request_id(self):
+        from autodiag.core.ev_support import hv_request_header_for_brand
+
+        assert hv_request_header_for_brand("BYD") == "79B"
+        assert hv_request_header_for_brand("BYD-Auto") == "79B"
+
+    def test_unknown_brands_fall_back_to_generic(self):
+        from autodiag.core.ev_support import hv_request_header_for_brand
+
+        assert hv_request_header_for_brand(None) == "7E4"
+        assert hv_request_header_for_brand("GWM") == "7E4"

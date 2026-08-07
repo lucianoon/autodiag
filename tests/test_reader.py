@@ -221,3 +221,54 @@ class TestClearCounters:
         reader = FakeReader({})
         assert reader.get_warmups_since_clear() is None
         assert reader.get_distance_since_clear() is None
+
+
+class RecordingReader(ELM327Reader):
+    """FakeReader que grava cada comando enviado ao ELM."""
+
+    def __init__(self, responses: dict[str, str]):
+        super().__init__(port="fake")
+        self._responses = responses
+        self.commands: list[str] = []
+
+    def _cmd(self, cmd: str, wait: float = 0.3, retries: int = 0) -> str:
+        _ = (wait, retries)
+        self.commands.append(cmd)
+        return self._responses.get(cmd, "NO DATA")
+
+
+class TestReadHighVoltageHeaders:
+    FIELDS = [{"id": 0x0101, "name": "SoC", "unit": "%", "formula": "U16 * 0.1"}]
+
+    def test_uses_brand_request_header_and_restores_broadcast(self):
+        reader = RecordingReader({
+            "AT SH 79B": "OK",
+            "ATE0": "OK",
+            "220101": "62 01 01 13 88",
+        })
+        out = reader.read_high_voltage(self.FIELDS, request_header="79B")
+        assert out.get("did_0101") == 500.0
+        assert "AT SH 79B" in reader.commands
+        # Nunca envia request no ID de RESPOSTA do BMS.
+        assert "AT SH 7BB" not in reader.commands
+        # Restaura o broadcast OBD2 7DF — 7E0 silenciaria DTCs/PIDs num BEV.
+        assert reader.commands[-1] == "AT SH 7DF"
+        assert "AT SH 7E0" not in reader.commands
+
+    def test_default_header_is_generic_ev_powertrain(self):
+        reader = RecordingReader({"AT SH 7E4": "OK", "ATE0": "OK"})
+        reader.read_high_voltage(self.FIELDS)
+        assert "AT SH 7E4" in reader.commands
+        assert reader.commands[-1] == "AT SH 7DF"
+
+    def test_broadcast_restored_even_on_header_error(self):
+        reader = RecordingReader({"AT SH 7E4": "ERROR"})
+        out = reader.read_high_voltage(self.FIELDS)
+        assert out == {}
+        assert reader.commands[-1] == "AT SH 7DF"
+
+    def test_header_input_is_sanitized(self):
+        reader = RecordingReader({})
+        reader.read_high_voltage(self.FIELDS, request_header="7E4; ATZ")
+        joined = " | ".join(reader.commands)
+        assert "ATZ" not in joined.replace("AT SH", "")

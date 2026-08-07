@@ -357,6 +357,26 @@ def hv_fields_for_brand(marca: str | None) -> list[dict[str, Any]]:
     return list(HIGH_VOLTAGE_DIDS_BR["default"])
 
 
+# CAN ID de REQUEST UDS por marca. O ID de RESPOSTA é outro (7BB responde a
+# 79B no BMS BYD; 7EC responde a 7E4 no padrão genérico de powertrain EV) —
+# enviar o request no ID de resposta não obtém resposta de ECU nenhuma.
+# Marcas fora desta tabela usam 7E4. Relatos de compatibilidade são a fonte
+# para expandir/corrigir esta tabela.
+UDS_REQUEST_HEADERS_BR: dict[str, str] = {
+    "BYD": "79B",
+}
+
+
+def hv_request_header_for_brand(marca: str | None) -> str:
+    """CAN ID (hex, sem 0x) em que o request UDS $22 deve ser enviado."""
+    if not marca:
+        return "7E4"
+    for key in (marca, marca.split("-")[0]):
+        if key in UDS_REQUEST_HEADERS_BR:
+            return UDS_REQUEST_HEADERS_BR[key]
+    return "7E4"
+
+
 # Fórmulas padrão (U16 = unsigned 16-bit big-endian, S16 = signed 16-bit BE).
 # Resoluções 0.1 / 0.25 / 0.05 são as mais comuns em UDS para veículos elétricos BR.
 _FORMULA_PATTERNS: tuple[tuple[Any, str], ...] = (

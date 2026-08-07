@@ -620,15 +620,18 @@ class ELM327Reader:
 
         return ""
 
-    # ── UDS $22 Alta Tensão (HV) via broadcast AT SH 7BB ─────────────
+    # ── UDS $22 Alta Tensão (HV) via header de REQUEST por marca ─────
 
     def read_high_voltage(
         self,
         fields: list[dict[str, Any]],
         vin: str | None = None,
+        request_header: str = "7E4",
     ) -> dict[str, Any]:
-        """Query DIDs UDS $22 (Read Data By Identifier) no CAN 11-bit 0x7BB (broadcast
-        funcional para UDS sem autenticação seed-key).
+        """Query DIDs UDS $22 (Read Data By Identifier) usando o CAN ID de
+        REQUEST da marca (``request_header``, ex.: 7E4 genérico, 79B BYD BMS).
+        O ID de resposta (7EC/7BB...) é de onde a ECU responde — enviar o
+        request nele não funciona.
 
         Recebe lista de campos com estrutura ``{id:int, name, unit, formula, description}``
         (oriunda de ``autodiag.core.ev_support.hv_fields_for_brand``.
@@ -652,9 +655,12 @@ class ELM327Reader:
         ids_tried = 0
         ids_ok = 0
         try:
-            # 1) Configura header para broadcast funcional 0x7BB (8 bytes, AT SH = Set
-            # Header. Liga CAN 11/29 bit header default depois volta AT SH 7E0 no final.
-            set_header = self._cmd("AT SH 7BB", wait=0.45, retries=1)
+            # 1) Header de request UDS da marca (AT SH = Set Header). O finally
+            # restaura o broadcast OBD2 0x7DF, que é o default do ELM327.
+            safe_header = "".join(c for c in request_header.upper() if c in "0123456789ABCDEF")
+            if not safe_header:
+                return out
+            set_header = self._cmd(f"AT SH {safe_header}", wait=0.45, retries=1)
             if "ERROR" in set_header.upper():
                 return out
             # Desliga echo novamente por garantia
@@ -713,10 +719,11 @@ class ELM327Reader:
                 if name:
                     out[name] = value
         finally:
-            # Sempre volta header para default (OBD2 0x7E0 = cabeçalho para
-            # powertrain). Ignora erros de retorno.
+            # Restaura o broadcast funcional OBD2 (0x7DF), que é o header com
+            # que o ELM327 inicia — 0x7E0 é físico e num BEV pode não ter ECU
+            # respondendo, o que silenciaria DTCs/PIDs no resto do scan.
             try:
-                self._cmd("AT SH 7E0", wait=0.2)
+                self._cmd("AT SH 7DF", wait=0.2)
             except Exception:
                 pass
         if ids_tried > 0 and ids_ok == 0:
