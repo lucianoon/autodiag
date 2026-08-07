@@ -63,3 +63,29 @@ def test_save_config_explicit(cfg_home):
     save_config(cfg)
     reloaded = load_config()
     assert reloaded.branding.mechanic_name == "Tia Maria"
+
+
+class TestLogoUrlNotTruncated:
+    def test_long_data_uri_logo_survives_intact(self, tmp_path, monkeypatch):
+        """Regressão: o logo em data-URI era truncado a 160 chars ANTES da
+        validação — passava no check e quebrava a imagem em todo laudo."""
+        from autodiag.core.config import get_branding, set_config_root, update_branding
+
+        set_config_root(tmp_path)
+        logo = "data:image/png;base64," + ("A" * 1400)
+        update_branding({"logo_url": logo})
+        assert get_branding().logo_url == logo
+
+    def test_oversized_logo_is_rejected_not_truncated(self, tmp_path):
+        from autodiag.core.config import get_branding, set_config_root, update_branding
+
+        set_config_root(tmp_path)
+        update_branding({"logo_url": "data:image/png;base64," + ("A" * 3000)})
+        assert get_branding().logo_url == ""
+
+    def test_other_fields_still_truncated(self, tmp_path):
+        from autodiag.core.config import get_branding, set_config_root, update_branding
+
+        set_config_root(tmp_path)
+        update_branding({"workshop_name": "X" * 500})
+        assert len(get_branding().workshop_name) == 160

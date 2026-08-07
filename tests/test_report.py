@@ -193,21 +193,30 @@ def test_hv_block_not_appear_for_ice_vin(history):
 
 
 def test_hv_block_shows_real_values_when_hv_data_present(history):
-    # Renault-Brasil 9BM Kwid E-Tech: DIDs HV 0x0401 (SOC), 0x0402 (Tensão Pack)
+    # BYD Dolphin (LGX): DIDs HV 0x0101 (SoC), 0x0102 (Tensão Pack).
+    # (O VIN 9BM usado antes é Mercedes-Benz do Brasil, a combustão —
+    # não gera card HV; Renault-Brasil é 93Y.)
     hv_data = {
-        "did_0401": 52.3,
-        "did_0402": 400.7,
+        "did_0101": 52.3,
+        "did_0102": 400.7,
     }
-    sess = _session(vin="9BMBE2E10RC123456", dtc_codes=[], hv_data=hv_data)
+    sess = _session(vin="LGXCE4CG8N0123456", dtc_codes=[], hv_data=hv_data)
     sid = history.save(sess)
     row = history.get(sid)
     rep = build_report(row, None)
     html = render_report_html(rep)
     # Card ⚡ aparece com valores formatados BR (vírgula como separador decimal)
-    assert "Renault" in html
+    assert "BYD" in html
     # 400.7 → "400,70" formatado BR
     assert "400,70" in html
     assert "52,30" in html
+
+
+def test_hv_block_absent_for_9bm_mercedes_diesel(history):
+    sess = _session(vin="9BMBE2E10RC123456", dtc_codes=[], hv_data=None)
+    sid = history.save(sess)
+    html = render_report_html(build_report(history.get(sid), None))
+    assert "Alta Tensão" not in html
 
 
 

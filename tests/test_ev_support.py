@@ -74,15 +74,13 @@ class TestSimulatedHighVoltage:
         current_a = float(result["did_0103"])
         assert -10 <= current_a <= -5, current_a
 
-    def test_renault_kwid_etech_retorna_soc_vpack(self) -> None:
+    def test_9bm_mercedes_diesel_nao_recebe_query_hv(self) -> None:
+        # Regressão: 9BM é Mercedes-Benz do Brasil (caminhões/Sprinter), não
+        # Renault — um diesel com VDS "BE" era classificado BEV e recebia
+        # tráfego UDS de alta tensão.
         sim = SimulatedELM327(seed=7)
         fields = hv_fields_for_brand("Renault-Brasil")
-        result = sim.read_high_voltage(
-            fields, vin="9BMBE2E10RC123456"
-        )
-        assert "did_0401" in result
-        soc = float(result["did_0401"])
-        assert 42 <= soc <= 46, soc
+        assert sim.read_high_voltage(fields, vin="9BMBE2E10RC123456") == {}
 
     def test_vw_gol_ice_retorna_empty_dict(self) -> None:
         """Veículo ICE (SIM_VIN = VW 9BW) → devolve {} vazio."""
@@ -93,7 +91,7 @@ class TestSimulatedHighVoltage:
 
     def test_empty_fields_retorna_empty(self) -> None:
         sim = SimulatedELM327()
-        assert sim.read_high_voltage([], vin="9BMBE2E10RC123456") == {}
+        assert sim.read_high_voltage([], vin="LGXCE4CG8N0123456") == {}
 
 
 class TestElm327ReaderInterface:
@@ -113,12 +111,20 @@ class TestEvVINPropulsao:
         assert ev.marca == "BYD"
         assert ev.confianca in {"alta", "média", "média-alta"}
 
-    def test_renault_kwid_etech_9bm_electric(self) -> None:
-        # 9BM = Renault-Brasil (São José dos Pinhais). Pos 3:5 = "BE" → BEV
+    def test_9bm_e_mercedes_benz_brasil_combustao(self) -> None:
+        # 9BM = Mercedes-Benz do Brasil; Renault-Brasil é 93Y.
         ev = detectar_propulsao_por_vin("9BMBE2E10RC123456")
-        assert ev.is_ev_any() is True
-        assert ev.propensao == PROP_ELECTRIC
-        assert (ev.marca == "Renault") or (ev.marca == "Renault-Brasil")
+        assert ev.is_ev_any() is False
+        assert ev.propensao == PROP_COMBUSTION
+        assert ev.marca == "Mercedes-Benz-Brasil"
+
+    def test_vw_id3_e_id4_sao_detectados_como_eletricos(self) -> None:
+        # Regressão: as regras antigas checavam vin[3:6], que em VIN VW
+        # europeu é sempre o filler "ZZZ" — nenhum ID. era detectado.
+        id3 = detectar_propulsao_por_vin("WVWZZZE1ZLP012345")
+        assert id3.propensao == PROP_ELECTRIC
+        id4 = detectar_propulsao_por_vin("WVGZZZE2ZMP001234")
+        assert id4.propensao == PROP_ELECTRIC
 
     def test_tesla_5yj_bev(self) -> None:
         ev = detectar_propulsao_por_vin("5YJ3E1EA3PF700001")

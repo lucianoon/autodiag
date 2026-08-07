@@ -75,24 +75,30 @@ _VIN_KNOWN_EV: dict[str, dict[str, Any]] = {
             "default": PROP_COMBUSTION,
         },
     },
-    "9BM": {  # Renault Nissan Mitsubishi, Brasil Real: Kwid / Oroch
-        "brand": "Renault-Brasil",
+    # 9BM é o WMI da MERCEDES-BENZ do Brasil (caminhões/ônibus/Sprinter),
+    # não da Renault (Renault-Brasil é 93Y). A regra "BE"→BEV que existia
+    # aqui classificava caminhão a diesel como elétrico e disparava UDS HV.
+    "9BM": {"brand": "Mercedes-Benz-Brasil", "models": {"default": PROP_COMBUSTION}},
+    "93Y": {"brand": "Renault-Brasil", "models": {"default": PROP_COMBUSTION}},
+    "KNM": {"brand": "Renault Samsung Coreia", "models": {"default": PROP_COMBUSTION}},
+    # ====== VW EV (família ID) ======
+    "WVW": {  # Volkswagen Deutschland
+        "brand": "Volkswagen",
         "models": {
+            # Posições 4-6 de VIN VW europeu são o filler "ZZZ" — as regras
+            # antigas em vin[3:6] eram inalcançáveis e nenhum ID. era
+            # detectado. O código do modelo fica em vin[6:8]: E1 = ID.3.
             "_rules": [
-                ("vin[3:5]", "BE", PROP_ELECTRIC),
+                ("vin[6:8]", "E1", PROP_ELECTRIC),
             ],
             "default": PROP_COMBUSTION,
         },
     },
-    "KNM": {"brand": "Renault Samsung Coreia", "models": {"default": PROP_COMBUSTION}},
-    # ====== VW EV (ID family / e-Golf / e-Up) ======
-    "WVW": {  # Volkswagen Deutschland
+    "WVG": {  # Volkswagen Deutschland (SUVs): E2 = ID.4/ID.5
         "brand": "Volkswagen",
         "models": {
             "_rules": [
-                ("vin[3:6]", "ZZ1", PROP_ELECTRIC),
-                ("vin[3:6]", "ZZE", PROP_ELECTRIC),
-                ("vin[3:6]", "ZZ2", PROP_ELECTRIC),
+                ("vin[6:8]", "E2", PROP_ELECTRIC),
             ],
             "default": PROP_COMBUSTION,
         },

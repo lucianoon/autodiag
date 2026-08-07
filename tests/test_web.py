@@ -616,3 +616,29 @@ class TestPdfRendersInProcess:
         # conteúdo veio do render local — não de um GET àquele endereço.
         assert "Carro SSRF Teste" in captured["html"]
         assert resp.read().startswith(b"%PDF-")
+
+
+class TestQrDownloadUrl:
+    def test_localhost_report_uses_lan_ip_in_qr_link(
+        self, monkeypatch: Any, client: Any, hist: Any
+    ) -> None:
+        """Regressão: o QR 'baixe no celular' codificava localhost — o
+        celular do cliente tentava abrir o próprio aparelho."""
+        from autodiag.web import server as srv
+
+        monkeypatch.setattr(
+            srv, "_local_ip_candidates", lambda: ["192.168.50.10", "127.0.0.1"]
+        )
+        sid = hist.save(_session())
+        resp = client.get(f"/report/{sid}", headers={"host": "127.0.0.1:8000"})
+        assert resp.status_code == 200
+        assert f"http://192.168.50.10:8000/report/{sid}/download" in resp.text
+        assert f"http://127.0.0.1:8000/report/{sid}/download" not in resp.text
+
+    def test_lan_access_keeps_request_host(
+        self, client: Any, hist: Any
+    ) -> None:
+        sid = hist.save(_session())
+        resp = client.get(f"/report/{sid}", headers={"host": "192.168.0.7:8000"})
+        assert resp.status_code == 200
+        assert f"http://192.168.0.7:8000/report/{sid}/download" in resp.text

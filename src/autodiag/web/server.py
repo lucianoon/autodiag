@@ -40,7 +40,7 @@ from autodiag.core.ev_support import (
 )
 from autodiag.core.pdf import render_html_to_pdf
 from autodiag.core.readiness import build_readiness_summary
-from autodiag.core.report import build_report, render_report_html
+from autodiag.core.report import _local_ip_candidates, build_report, render_report_html
 from autodiag.core.trend import build_vehicle_trends
 from autodiag.core.triage import build_guided_triage
 from autodiag.core.vehicle import VehicleProfile, decode_vin_local
@@ -424,6 +424,30 @@ async def api_vehicle_export_csv(vin: str, limit: int = Query(500, ge=1, le=5000
     )
 
 
+def _download_url_for(request: Request, sid: int) -> str:
+    """URL de download para o QR do laudo.
+
+    Quando o mecânico abre o laudo em localhost, um QR apontando para
+    127.0.0.1 faria o celular do cliente tentar abrir o próprio aparelho —
+    nesse caso trocamos pelo IP de LAN da máquina.
+    """
+    host = (request.url.hostname or "").lower()
+    if host in ("127.0.0.1", "localhost", "::1"):
+        lan = next(
+            (
+                ip
+                for ip in _local_ip_candidates()
+                if not ip.startswith("127.") and ip != "localhost"
+            ),
+            None,
+        )
+        if lan:
+            port = request.url.port
+            port_part = f":{port}" if port else ""
+            return f"http://{lan}{port_part}/report/{sid}/download"
+    return str(request.url_for("report_download", sid=sid))
+
+
 @app.get("/report/{sid}", response_class=HTMLResponse)
 async def report(sid: int, request: Request):
     with History() as history:
@@ -432,7 +456,7 @@ async def report(sid: int, request: Request):
             return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
         prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
         vhist = history.list_by_vin(row.get("vin") or "", limit=8)
-    url = str(request.url_for("report_download", sid=sid))
+    url = _download_url_for(request, sid)
     rep = build_report(row, prev, vehicle_history=vhist, download_url=url)
     return render_report_html(rep)
 
@@ -445,7 +469,7 @@ async def report_download(sid: int, request: Request):
             return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
         prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
         vhist = history.list_by_vin(row.get("vin") or "", limit=8)
-    url = str(request.url_for("report_download", sid=sid))
+    url = _download_url_for(request, sid)
     rep = build_report(row, prev, vehicle_history=vhist, download_url=url)
     html = render_report_html(rep)
     return HTMLResponse(
@@ -474,7 +498,7 @@ async def report_pdf(sid: int, request: Request):
     # O HTML é renderizado aqui e injetado via set_content: o Chromium nunca
     # busca uma URL derivada do header Host (SSRF), nem depende do server
     # estar acessível de dentro do sandbox do browser.
-    url = str(request.url_for("report_download", sid=sid))
+    url = _download_url_for(request, sid)
     rep = build_report(row, prev, vehicle_history=vhist, download_url=url)
     report_html = render_report_html(rep)
     pdf_path: Path | None = None

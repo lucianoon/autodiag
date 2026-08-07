@@ -197,11 +197,14 @@ def _clean_branding_patch(patch: dict[str, Any]) -> dict[str, Any]:
         if k not in fields or not isinstance(v, str):
             continue
         cleaned = v.strip()
-        if len(cleaned) > _MAX_FIELD_LEN:
-            cleaned = cleaned[:_MAX_FIELD_LEN]
         if k == "logo_url":
+            # logo_url tem limite próprio (2000, em _is_safe_logo_url) e NÃO
+            # pode ser truncado: um data-URI base64 cortado em 160 chars
+            # passava na validação e quebrava a imagem em todo relatório.
             if not _is_safe_logo_url(cleaned):
                 cleaned = ""
+        elif len(cleaned) > _MAX_FIELD_LEN:
+            cleaned = cleaned[:_MAX_FIELD_LEN]
         out[k] = cleaned
     return out
 
