@@ -7,6 +7,51 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- **Sistema de Personas (4 perfis de uso)**: módulo
+  [core/config.py](src/autodiag/core/config.py) ganhou `PERSONAS_META`,
+  `list_personas()`, `get_persona()`, `set_persona(id, mark_selected=True)`
+  e o `AppConfig` persistiu `persona: str` + `persona_selected: bool` (retrocompatível
+  — quem atualiza de versão anterior default `mechanic` já está pronto).
+  Quatro perfis cobrindo públicos desde técnico solo até gerente de frota grande:
+  `mechanic` (Mecânico 🔧, foco Scan), `shop_boss` (Dono(a) de Oficina 🏪, foco
+  Dashboard + KPIs), `inspector` (Vistoriador 🔍, foco Relatório + PDF),
+  `fleet` (Gestor(a) de Frota 🚚, foco Evolução + CSV).
+- **3 endpoints novos de saúde / contexto / persona**:
+  - `GET /api/ping` público sempre retorna `{ping:"pong", ts}` (zero toques no DB)
+    — ideal para K8s readiness, Caddy healthcheck, AWS ALB.
+  - `GET /health` (e alias `/api/health`): `{status, version, pid, uptime_seconds,
+    started_at, tenant, database:{path, size_bytes, sessions, critical_sessions,
+    last_scan_ts}}`; se DB falhar retorna HTTP **503 `{status:"degraded"}`** coerente
+    para alerta em Prometheus/Grafana.
+  - `GET /api/persona` / `PUT /api/persona {id, mark_selected}`; e `GET /api/app-context`
+    (branding + persona + version + tenant em 1 viagem para SPA boot rápido).
+- **Dockerfile oficial multi-stage + docker-compose + deploy/Caddyfile**:
+  imagem `python:3.12-slim` → builder `uv` leve → runtime `tini` (PID 1 limpo),
+  `/data` volume para `~/.autodiag`, usuário non-root `10007:10007`, Playwright com
+  `chromium --with-deps` instalado condicionalmente, healthcheck integrado batendo em
+  `/api/ping`, `read_only` friendly. `docker-compose.yml` sobe **AutoDiag +
+  Caddy proxy reverso HTTPS automático** (ACME ZeroSSL/Let's Encrypt em domínio
+  personalizado + LAN HTTP :80 fallback para oficina sem domínio).
+- **UI: Chip de persona visível no header + modal de onboarding**:
+  chip 🔧 Mecânico ao lado do ⚙ Branding é clicável → abre o `#personaModal` com
+  4 cards grandes. Ordem das abas é reordenada por persona, destaques e opacidade
+  são ajustados, e a aba inicial salta automaticamente para `default_home_tab`
+  após salvar. **1ª execução**: modal de seleção abre sozinho em 250ms; depois de
+  escolhido o perfil, o Guia Rápido (`#helpModal`) mostra passos específicos
+  por persona em vez do texto genérico antigo.
+
+### Alterado
+
+- `CORS` do servidor FastAPI ganhou `expose_headers=['X-Request-Id',
+  'Content-Disposition']` — o browser agora permite o JS ler o nome do arquivo
+  do header `Content-Disposition` nos downloads PDF/CSV/HTML cross-origin
+  (necessário quando AutoDiag está atrás de Caddy sub-path ou proxy).
+- `AppContext` de inicialização SPA usa 1 fetch `/api/app-context` em vez de
+  2-3 chamadas separadas, reduzindo tempo de First Meaningful Paint em
+  redes lentas/celulares.
+- Onboarding Guia rápido anterior (três perfis hardcoded sem persistência) foi
+  substituído por **HELP_PERSONAS_TIPS** carregado do `APP_CONTEXT.persona`
+  persistido pelo backend, 100% sincronizado com backend.
 - **Orçamento automático estimado por família DTC**: novo módulo
   [core/cost_estimates.py](src/autodiag/core/cost_estimates.py) com tabela
   de faixas em **centavos de Real** (`min_cents, max_cents`) por família

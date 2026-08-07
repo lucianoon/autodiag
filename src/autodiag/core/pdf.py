@@ -5,7 +5,8 @@ from pathlib import Path
 
 def _playwright_sync_api_available() -> bool:
     try:
-        import playwright  # type: ignore[import-not-found]
+        import playwright as _pw  # noqa: F401  # type: ignore[import-not-found]
+        from playwright import sync_api as _sa  # noqa: F401  # type: ignore[import-not-found]
 
         return True
     except Exception:
@@ -39,7 +40,7 @@ def render_url_to_pdf(url: str, output_path: Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
+        from playwright.sync_api import sync_playwright
     except Exception as e:  # pragma: no cover - depende runtime
         raise RuntimeError(
             "Módulo playwright está instalado mas falhou ao importar a "

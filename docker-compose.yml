@@ -1,0 +1,43 @@
+services:
+  autodiag:
+    build: .
+    image: autodiag:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - autodiag-data:/data
+    environment:
+      - AUTODIAG_HOME=/data
+      - AUTODIAG_DB_PATH=/data/history.db
+      - HOST=0.0.0.0
+      - PORT=8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;r=urllib.request.urlopen('http://127.0.0.1:8000/api/ping');sys.exit(0 if r.status==200 and r.read().count(b'pong') else 2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    user: "10007"
+    read_only: false
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=128m
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on: [autodiag]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  autodiag-data:
+  caddy-data:
+  caddy-config:

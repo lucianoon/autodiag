@@ -10,6 +10,47 @@ from typing import Any
 _DEFAULT_DIR_LOCK = threading.Lock()
 _OVERRIDE_DIR: Path | None = None
 
+PERSONA_MECHANIC = "mechanic"
+PERSONA_SHOP_BOSS = "shop_boss"
+PERSONA_INSPECTOR = "inspector"
+PERSONA_FLEET = "fleet"
+
+PERSONAS_META: dict[str, dict[str, str]] = {
+    PERSONA_MECHANIC: {
+        "label": "Mecânico",
+        "emoji": "🔧",
+        "tagline": "Diagnóstico no veículo, rápido e preciso",
+        "default_home_tab": "scan",
+    },
+    PERSONA_SHOP_BOSS: {
+        "label": "Dono(a) de Oficina",
+        "emoji": "🏪",
+        "tagline": "Painel de controle da oficina: faturamento, KPIs, tendências",
+        "default_home_tab": "dashboard",
+    },
+    PERSONA_INSPECTOR: {
+        "label": "Vistoriador Seminovos",
+        "emoji": "🔍",
+        "tagline": "Checklist de compra, relatórios limpos e prontos para o cliente",
+        "default_home_tab": "report",
+    },
+    PERSONA_FLEET: {
+        "label": "Gestor(a) de Frota",
+        "emoji": "🚚",
+        "tagline": "Histórico de cada veículo, custos e prevenção",
+        "default_home_tab": "evolucao",
+    },
+}
+
+DEFAULT_PERSONA = PERSONA_MECHANIC
+
+
+def list_personas() -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for key, meta in PERSONAS_META.items():
+        out.append({"id": key, **meta})
+    return out
+
 
 def _resolve_dir() -> Path:
     env = os.environ.get("AUTODIAG_HOME")
@@ -50,15 +91,31 @@ class Branding:
 @dataclass
 class AppConfig:
     branding: Branding = field(default_factory=Branding)
+    persona: str = DEFAULT_PERSONA
+    persona_selected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {"branding": asdict(self.branding)}
+        return {
+            "branding": asdict(self.branding),
+            "persona": self.persona,
+            "persona_selected": bool(self.persona_selected),
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppConfig:
         b_data = (data or {}).get("branding") or {}
         fields = Branding.__dataclass_fields__
-        return cls(branding=Branding(**{k: b_data.get(k, "") for k in fields}))
+        branding = Branding(**{k: b_data.get(k, "") for k in fields})
+        raw_persona = str((data or {}).get("persona") or "").strip()
+        persona = (
+            raw_persona if raw_persona in PERSONAS_META else DEFAULT_PERSONA
+        )
+        persona_selected = bool((data or {}).get("persona_selected"))
+        return cls(
+            branding=branding,
+            persona=persona,
+            persona_selected=persona_selected,
+        )
 
 
 def _ensure_dir(path: Path) -> None:
@@ -88,6 +145,23 @@ def save_config(config: AppConfig, path: Path | None = None) -> Path:
 
 def get_branding() -> Branding:
     return load_config().branding
+
+
+def get_persona() -> str:
+    cfg = load_config()
+    return cfg.persona if cfg.persona in PERSONAS_META else DEFAULT_PERSONA
+
+
+def set_persona(persona_id: str, *, mark_selected: bool = True) -> str:
+    key = str(persona_id or "").strip()
+    if key not in PERSONAS_META:
+        key = DEFAULT_PERSONA
+    cfg = load_config()
+    cfg.persona = key
+    if mark_selected:
+        cfg.persona_selected = True
+    save_config(cfg)
+    return key
 
 
 _MAX_FIELD_LEN = 160

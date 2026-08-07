@@ -1,0 +1,29 @@
+{
+	# AutoDiag por trás de proxy Caddy → HTTPS automatico (ACME ZeroSSL/Let's Encrypt).
+	# Troque `autodiag.oficina.com.br` pelo dominio real da oficina.
+	autodiag.oficina.com.br {
+		encode zstd gzip
+		header -Server
+		header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		header X-Content-Type-Options "nosniff"
+		header Referrer-Policy "same-origin"
+		header X-Frame-Options "SAMEORIGIN"
+
+		reverse_proxy autodiag:8000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
+
+	# LAN: acesso direto via IP sem HTTPS (oficina pequena sem dominio).
+	:80 {
+		encode zstd gzip
+		reverse_proxy autodiag:8000 {
+			transport http { read_timeout 120s; write_timeout 120s }
+		}
+	}
+}

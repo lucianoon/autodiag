@@ -6,7 +6,7 @@ import os
 import tempfile
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from autodiag.core.config import Branding, get_branding, update_branding
+from autodiag.core.config import (
+    PERSONAS_META,
+    Branding,
+    get_branding,
+    list_personas,
+    load_config,
+    set_persona,
+    update_branding,
+)
 from autodiag.core.diagnosis import infer_urgency
 from autodiag.core.dtc import full_database, lookup
 from autodiag.core.pdf import render_url_to_pdf
@@ -33,14 +41,15 @@ from autodiag.db.history import History, Session
 from autodiag.elm327 import OBDReader, create_reader
 from autodiag.elm327.reader import DTCRecord, list_ports
 
+STARTUP_TS = time.time()
 app = FastAPI(title="AutoDiag")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     max_age=3600,
+    expose_headers=["X-Request-Id", "Content-Disposition"],
 )
 
 _STATIC = Path(__file__).parent / "static"
@@ -155,6 +164,60 @@ async def api_put_branding(body: dict[str, Any] = _DEFAULT_BODY_FACTORY):
 
     updated = update_branding({k: str(body.get(k, "")) for k in Branding.__dataclass_fields__})
     return asdict(updated)
+
+
+@app.get("/api/persona")
+async def api_get_persona() -> dict[str, Any]:
+    """Retorna persona ativa + lista de personas disponíveis + meta."""
+    cfg = load_config()
+    active = cfg.persona if cfg.persona in PERSONAS_META else "mechanic"
+    return {
+        "personas": list_personas(),
+        "active_id": active,
+        "active_meta": PERSONAS_META.get(active) or PERSONAS_META["mechanic"],
+        "selected": bool(cfg.persona_selected),
+    }
+
+
+@app.put("/api/persona")
+async def api_put_persona(body: dict[str, Any] = _DEFAULT_BODY_FACTORY) -> dict[str, Any]:
+    """Altera a persona ativa. `id` obrigatório (mechanic|shop_boss|inspector|fleet).
+
+    `mark_selected: true` por padrão → suprime o onboarding inicial da persona
+    nas próximas visitas (pode ser re-aberto no modal do header).
+    """
+    pid = str((body or {}).get("id") or "").strip()
+    mark = bool((body or {}).get("mark_selected", True))
+    chosen = set_persona(pid, mark_selected=mark)
+    return {
+        "ok": True,
+        "active_id": chosen,
+        "active_meta": PERSONAS_META.get(chosen) or PERSONAS_META["mechanic"],
+        "selected": mark,
+    }
+
+
+@app.get("/api/app-context")
+async def api_app_context() -> dict[str, Any]:
+    """Contexto de inicialização da SPA: branding + persona + health mínimo.
+
+    Evita 3 viagens separadas em telas lentas.
+    """
+    from dataclasses import asdict
+
+    cfg = load_config()
+    active = cfg.persona if cfg.persona in PERSONAS_META else "mechanic"
+    return {
+        "branding": asdict(cfg.branding),
+        "persona": {
+            "personas": list_personas(),
+            "active_id": active,
+            "active_meta": PERSONAS_META.get(active) or PERSONAS_META["mechanic"],
+            "selected": bool(cfg.persona_selected),
+        },
+        "version": "0.4.0",
+        "tenant": (get_branding().workshop_name.strip() or "")[:24] or "Oficina",
+    }
 
 
 @app.get("/api/vehicles")
@@ -311,6 +374,82 @@ async def report_pdf(sid: int, request: Request):
             "Cache-Control": "no-store",
         },
     )
+
+
+@app.get("/api/ping")
+async def api_ping() -> dict[str, Any]:
+    """Endpoint público para healthcheck / keep-alive / supervisão de container.
+
+    Retorna sempre o mesmo shape `{ping}`. Não toca no DB, não bloqueia,
+    serve para load balancers (AWS ALB, Caddy, Traefik, K8s readinessProbe)
+    validarem que o processo respondeu HTTP 200 em <500ms.
+    """
+    return {"ping": "pong", "ts": time.time()}
+
+
+@app.get("/health")
+@app.get("/api/health")
+async def api_health() -> JSONResponse:
+    """Health detalhado para monitoramento em escala (Prometheus, Datadog, etc.).
+
+    Expõe: versão do pacote, pid do processo, tempo de uptime em segundos,
+    tamanho do banco SQLite em bytes, tenant id (workshop_name + 6 primeiros
+    chars do hostname ou AUTODIAG_TENANT), contagem sumária de sessões no
+    histórico. Se o DB não abrir → retorna HTTP 503 `{status:"degraded"}`
+    em vez de crash (bom pra alertas em grafana/prometheus).
+    """
+    import importlib.metadata as _meta
+
+    version: str = "0.4.0"
+    try:
+        version = _meta.version("autodiag") or version
+    except Exception:
+        pass
+
+    now = time.time()
+    uptime_s = max(0.0, now - STARTUP_TS)
+    tenant_from_env = os.environ.get("AUTODIAG_TENANT", "").strip()
+    tenant_id = tenant_from_env or (
+        (get_branding().workshop_name.strip() or "")[:24] or "unknown"
+    )
+    pid = os.getpid()
+    db_path = None
+    db_size_bytes = 0
+    total_sessions = 0
+    critical_sessions = 0
+    status_ok = True
+    last_scan: str | None = None
+    try:
+        with History() as h:
+            rows = h.summary()
+            total_sessions = int(rows.get("total_sessions") or 0)
+            critical_sessions = int(rows.get("critical") or 0)
+            last_row = rows.get("last_session") or {}
+            last_scan = str(last_row.get("ts")) if last_row else None
+            db_path = Path(h._con.execute("PRAGMA database_list").fetchone()[2])
+            if db_path and db_path.exists():
+                db_size_bytes = db_path.stat().st_size
+    except Exception as _e:
+        status_ok = False
+    iso_startup = datetime.fromtimestamp(STARTUP_TS, tz=UTC).isoformat()
+    payload: dict[str, Any] = {
+        "status": "ok" if status_ok else "degraded",
+        "service": "autodiag",
+        "version": version,
+        "pid": pid,
+        "uptime_seconds": round(uptime_s, 3),
+        "started_at": iso_startup,
+        "tenant": tenant_id,
+        "database": {
+            "path": str(db_path) if db_path else None,
+            "size_bytes": db_size_bytes,
+            "sessions": total_sessions,
+            "critical_sessions": critical_sessions,
+            "last_scan_ts": last_scan,
+        },
+    }
+    code = 200 if status_ok else 503
+    return JSONResponse(payload, status_code=code)
 
 
 @app.get("/api/ports")

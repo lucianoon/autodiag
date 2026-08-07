@@ -56,6 +56,22 @@
       padding: 16px;
       border: 1px solid #30363d;
     }
+    .persona-chip {
+      display:inline-flex;align-items:center;gap:.4rem;
+      background:linear-gradient(135deg,#161b22,#0d1117);
+      border:1px solid #30363d;border-radius:999px;padding:.25rem .65rem;
+      font-size:12px;color:#8b949e;cursor:pointer;user-select:none;
+      transition:transform .12s ease, border-color .15s ease;
+    }
+    .persona-chip:hover{border-color:#58a6ff;color:#e6edf3;transform:translateY(-1px)}
+    .persona-chip strong{color:#e6edf3;font-weight:600}
+    .persona-card{transition:border-color .15s ease,transform .12s ease}
+    .persona-card:hover{border-color:#58a6ff;transform:translateY(-2px)}
+    .persona-card[aria-pressed=true]{
+      border-color:#2f81f7;background:rgba(47,129,247,.12);box-shadow:0 0 0 3px rgba(47,129,247,.18)
+    }
+    @media (max-width: 600px){ .nav-tabs .nav-link{font-size:12px;padding:.35rem .55rem} }
+    .persona-hide { display: none !important; }
   </style>
 </head>
 <body>
@@ -64,6 +80,12 @@
   <span class="fw-bold" style="color:#58a6ff; font-size:1.1rem; letter-spacing:.5px;">◈ AutoDiag OBD2</span>
   <span class="text-muted small" id="last-scan-label"></span>
   <div class="ms-auto d-flex gap-2 align-items-center">
+    <span class="persona-chip" id="persona-chip" role="button"
+          data-bs-toggle="modal" data-bs-target="#personaModal"
+          title="Selecione como você usa o AutoDiag">
+      <span id="persona-chip-emoji">🧰</span>
+      <span class="text-muted small" id="persona-chip-label">Mecânico</span>
+    </span>
     <button class="btn btn-outline-secondary btn-sm" onclick="openBranding()">⚙ Branding</button>
     <a class="btn btn-outline-secondary btn-sm" href="#" id="help-onboard-link"
        data-bs-toggle="modal" data-bs-target="#helpModal">❔ Guia rápido</a>
@@ -73,11 +95,21 @@
 <div class="container-fluid px-4 py-3" style="max-width:1200px">
 
   <ul class="nav nav-tabs mb-4" id="mainTabs">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-dash">Dashboard</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-scan">Scan</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-hist">Histórico</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-evol">Evolução</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-dtc">DTC</a></li>
+    <li class="nav-item persona-nav persona-tab persona-opt persona-tab-dash">
+      <a class="nav-link active" data-bs-toggle="tab" href="#tab-dash" data-persona-tab="dash">Dashboard</a>
+    </li>
+    <li class="nav-item persona-nav persona-tab persona-opt persona-tab-scan">
+      <a class="nav-link" data-bs-toggle="tab" href="#tab-scan" data-persona-tab="scan">Scan</a>
+    </li>
+    <li class="nav-item persona-nav persona-tab persona-opt persona-tab-hist">
+      <a class="nav-link" data-bs-toggle="tab" href="#tab-hist" data-persona-tab="hist">Histórico</a>
+    </li>
+    <li class="nav-item persona-nav persona-tab persona-opt persona-tab-evol">
+      <a class="nav-link" data-bs-toggle="tab" href="#tab-evol" data-persona-tab="evol">Evolução</a>
+    </li>
+    <li class="nav-item persona-nav persona-tab persona-opt persona-tab-dtc">
+      <a class="nav-link" data-bs-toggle="tab" href="#tab-dtc" data-persona-tab="dtc">DTC</a>
+    </li>
   </ul>
 
   <div class="tab-content">
@@ -1237,7 +1269,196 @@ async function loadVehicleEvolution(vin) {
   }).join('');
 }
 
-// ── modal helpers: branding + notes/tags + help onboarding ────────────────────
+// ── modal helpers: branding + notes/tags + persona selector + help onboarding ──
+
+let APP_CONTEXT = {
+  branding: {workshop_name:'', mechanic_name:'', phone:'', email:'', address:'', logo_url:'', notes_header:''},
+  persona: {
+    personas: [
+      {id:'mechanic',   label:'Mecânico',             emoji:'🔧', tagline:'Diagnóstico no veículo, rápido e preciso',              default_home_tab:'scan'},
+      {id:'shop_boss',  label:'Dono(a) de Oficina',   emoji:'🏪', tagline:'Painel de controle da oficina: faturamento, KPIs, tendências', default_home_tab:'dashboard'},
+      {id:'inspector',  label:'Vistoriador Seminovos',emoji:'🔍', tagline:'Checklist de compra, relatórios limpos para o cliente',    default_home_tab:'report'},
+      {id:'fleet',      label:'Gestor(a) de Frota',   emoji:'🚚', tagline:'Histórico de cada veículo, custos e prevenção',           default_home_tab:'evolucao'},
+    ],
+    active_id: 'mechanic',
+    selected: false,
+  },
+  version: '0.4.0',
+};
+
+function _findPersonaMeta(id) {
+  return (APP_CONTEXT.persona.personas || []).find(p => p.id === id)
+      || APP_CONTEXT.persona.personas[0];
+}
+
+function _updatePersonaChip() {
+  const m = _findPersonaMeta(APP_CONTEXT.persona.active_id);
+  const chip = document.getElementById('persona-chip');
+  if (!chip) return;
+  const emoji = document.getElementById('persona-chip-emoji');
+  const label = document.getElementById('persona-chip-label');
+  if (emoji) emoji.textContent = m.emoji || '🧰';
+  if (label) label.textContent = m.label || 'Mecânico';
+  chip.title = `Perfil ativo: ${m.label} — ${m.tagline}. Clique para trocar.`;
+}
+
+function PERSONA_VISIBILITY_RULES() {
+  // Por pessoa: quais abas ficam menos relevantes (rebaixa, não remove —
+  // usuário ainda pode chegar nelas via deep-link ou se quiser)
+  const m = APP_CONTEXT.persona.active_id;
+  return {
+    mechanic:  { order:['scan','dash','hist','evol','dtc'],  demote:['dtc'],         highlight:['scan','hist'] },
+    shop_boss: { order:['dash','hist','evol','scan','dtc'],  demote:['dtc'],         highlight:['dash','hist','evol'] },
+    inspector: { order:['dash','scan','hist','evol','dtc'],  demote:['evol','dtc'],  highlight:['scan','hist'] },
+    fleet:     { order:['dash','evol','hist','scan','dtc'],  demote:['dtc'],         highlight:['evol','hist','dash'] },
+  }[m] || { order:['dash','scan','hist','evol','dtc'], demote:[], highlight:[] };
+}
+
+function applyPersonaLayout() {
+  const r = PERSONA_VISIBILITY_RULES();
+  const orderMap = { scan: 'scan', dash:'dash', hist:'hist', evol:'evol', dtc:'dtc' };
+  const tabsContainer = document.getElementById('mainTabs');
+  if (tabsContainer) {
+    const items = Array.from(tabsContainer.querySelectorAll('li.nav-item.persona-tab'));
+    const byTab = {};
+    items.forEach(it => {
+      const a = it.querySelector('a[data-persona-tab]');
+      if (a) byTab[a.getAttribute('data-persona-tab')] = it;
+    });
+    r.order.forEach(tabId => {
+      if (byTab[tabId]) tabsContainer.appendChild(byTab[tabId]);
+    });
+    items.forEach(it => {
+      const a = it.querySelector('a[data-persona-tab]');
+      const tabId = a ? a.getAttribute('data-persona-tab') : null;
+      const demoted = r.demote.includes(tabId);
+      it.classList.toggle('text-muted', demoted);
+      if (a) {
+        a.style.opacity = demoted ? '0.62' : '1';
+        a.style.fontWeight = r.highlight.includes(tabId) ? '600' : '500';
+        a.style.color = r.highlight.includes(tabId) ? '#e6edf3' : '';
+      }
+    });
+  }
+  _updatePersonaChip();
+  document.documentElement.setAttribute('data-persona', APP_CONTEXT.persona.active_id);
+}
+
+function personaModalHtml() {
+  const personas = APP_CONTEXT.persona.personas;
+  return `
+    <div class="modal fade" id="personaModal" tabindex="-1" aria-labelledby="personaModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content bg-dark border-secondary text-light">
+          <div class="modal-header border-secondary">
+            <h5 class="modal-title" id="personaModalLabel">
+              ${APP_CONTEXT.persona.selected ? 'Trocar perfil de uso' : 'Bem-vindo — qual é o seu perfil?'}
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small mb-3">Escolha o perfil que mais se parece com o seu uso.
+              Nós ajustamos a ordem das abas e os atalhos iniciais — você pode mudar de opinião depois
+              no botão azul do cabeçalho (<strong id="pm-chip-preview"></strong>).</p>
+            <div class="row g-3" id="persona-picker-grid">
+              ${personas.map(p => `
+                <div class="col-12 col-md-6 col-lg-3">
+                  <button type="button" class="btn text-start persona-card w-100 h-100 card border-secondary bg-transparent text-light p-0"
+                          data-persona-id="${p.id}"
+                          aria-pressed="${APP_CONTEXT.persona.active_id === p.id ? 'true' : 'false'}">
+                    <div class="card-body">
+                      <div class="fs-2 mb-1">${p.emoji}</div>
+                      <div class="fw-semibold mb-1">${p.label}</div>
+                      <div class="text-muted small">${p.tagline}</div>
+                      <div class="mt-2 small text-body-secondary">Abre direto em:
+                        <code>${p.default_home_tab}</code></div>
+                    </div>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="modal-footer border-secondary justify-content-between">
+            <div class="small text-muted" id="persona-picker-footer">
+              Perfil atualmente selecionado:
+              <strong id="persona-picker-active">${_findPersonaMeta(APP_CONTEXT.persona.active_id).label}</strong>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+              <button class="btn btn-primary btn-sm" id="persona-save-btn" disabled>Salvar e ajustar interface</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ensurePersonaModal() {
+  if (!document.getElementById('personaModal')) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = personaModalHtml();
+    document.body.appendChild(wrap.firstElementChild);
+
+    document.querySelectorAll('#persona-picker-grid [data-persona-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pid = btn.getAttribute('data-persona-id');
+        document.querySelectorAll('#persona-picker-grid [data-persona-id]').forEach(b => {
+          b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+        });
+        const label = _findPersonaMeta(pid).label;
+        const preview = document.getElementById('persona-picker-active');
+        if (preview) preview.textContent = label;
+        const saveBtn = document.getElementById('persona-save-btn');
+        saveBtn.disabled = pid === APP_CONTEXT.persona.active_id && APP_CONTEXT.persona.selected;
+        saveBtn.dataset.pick = pid;
+      });
+    });
+
+    const saveBtn = document.getElementById('persona-save-btn');
+    saveBtn.addEventListener('click', async () => {
+      const pid = saveBtn.dataset.pick || APP_CONTEXT.persona.active_id;
+      const resp = await fetch('/api/persona', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({id: pid, mark_selected: true})
+      });
+      if (!resp.ok) return;
+      const j = await resp.json();
+      APP_CONTEXT.persona.active_id = j.active_id;
+      APP_CONTEXT.persona.selected = !!j.selected;
+      if (j.active_meta) {
+        const exist = APP_CONTEXT.persona.personas.find(p => p.id === j.active_id);
+        if (!exist) APP_CONTEXT.persona.personas.push({id:j.active_id, ...j.active_meta});
+        else Object.assign(exist, j.active_meta);
+      }
+      applyPersonaLayout();
+      jumpToPersonaDefaultTab();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('personaModal')).hide();
+    });
+  }
+  const preview = document.getElementById('pm-chip-preview');
+  if (preview) {
+    const m = _findPersonaMeta(APP_CONTEXT.persona.active_id);
+    preview.textContent = `${m.emoji} ${m.label}`;
+  }
+  const footer = document.getElementById('persona-picker-active');
+  if (footer) footer.textContent = _findPersonaMeta(APP_CONTEXT.persona.active_id).label;
+  const saveBtn = document.getElementById('persona-save-btn');
+  if (saveBtn) saveBtn.disabled = true;
+  document.querySelectorAll('#persona-picker-grid [data-persona-id]').forEach(b => {
+    const pid = b.getAttribute('data-persona-id');
+    b.setAttribute('aria-pressed', pid === APP_CONTEXT.persona.active_id ? 'true' : 'false');
+  });
+}
+
+function jumpToPersonaDefaultTab() {
+  const m = _findPersonaMeta(APP_CONTEXT.persona.active_id);
+  const tab = m.default_home_tab;
+  const href = { scan: '#tab-scan', dashboard: '#tab-dash', report: '#tab-hist', evolucao: '#tab-evol' }[tab] || '#tab-dash';
+  const el = document.querySelector(`a[data-bs-toggle="tab"][href="${href}"]`);
+  if (el) new bootstrap.Tab(el).show();
+}
 
 function openBranding() {
   fetch('/api/branding').then(r => r.json()).then(b => {
@@ -1265,6 +1486,7 @@ async function saveBranding() {
   await fetch('/api/branding', {method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(payload)});
+  try { APP_CONTEXT.branding = payload; } catch(_) {}
   bootstrap.Modal.getOrCreateInstance(document.getElementById('brandingModal')).hide();
 }
 
@@ -1309,80 +1531,80 @@ async function saveSessionNotes() {
   if (document.getElementById('tab-dash').classList.contains('active', 'show')) loadDash();
 }
 
-// ── onboarding help persona modal ─────────────────────────────────────────────
+// ── persona aware app boot / first-run wizard + persona selector modal ────────
 
-const PERSONAS = [
-  {
-    key: 'workshop',
-    title: '🔧 Oficina / Mecânico independente',
-    points: [
-      '1. Conecte o ELM327 (USB ou Wi-Fi) e abra a aba Scan. Marque "Modo demo" se não tiver hardware ainda.',
-      '2. Inicie o scan e salve cada atendimento na aba Histórico.',
-      '3. Use ✎ Notas / Tags para marcar o que foi feito (ex: troca de óleo, orçado P0171).',
-      '4. Abra o relatório e use ⚙ Branding para colocar dados da sua oficina. Entregue o PDF/HTML para o cliente.',
-      '5. Use a aba Evolução por VIN para mostrar a tendência do carro em atendimentos de retorno.',
-    ],
-  },
-  {
-    key: 'inspector',
-    title: '🚗 Vistoriador de seminovos',
-    points: [
-      '1. Ative o "Modo demo" na aba Scan se o cliente não quiser conectar agora, ou conecte via Wi-Fi ELM327 portátil.',
-      '2. Salve 1 scan por carro com VIN e KM. Exporte o CSV no botão ⤓ CSV da aba Evolução.',
-      '3. Use ✎ Notas para registrar "chassi batido?", "pneus 30% vida" etc.',
-      '4. Anexe o relatório HTML em cada vistoria como prova objetiva de leitura OBD.',
-    ],
-  },
-  {
-    key: 'hobbyist',
-    title: '🚙 Entusiasta / dono de carro',
-    points: [
-      '1. Baixe um ELM327 compatível (USB/Bluetooth/Wi-Fi) e conecte no OBD2 do seu carro.',
-      '2. Use "Modo demo" para aprender antes de testar no carro real.',
-      '3. Quando aparecer a luz do check engine, leia os DTCs, veja causas e testes sugeridos.',
-      '4. Salve scans mensais e use a aba Evolução para perceber se fuel trim ou coolant estão piorando.',
-    ],
-  },
-];
+const HELP_PERSONAS_TIPS = {
+  mechanic: [
+    '1. Conecte o ELM327 (USB ou Wi-Fi) e comece na aba Scan. Use "Modo demo" para aprender sem hardware.',
+    '2. Salve cada atendimento no Histórico. Marque tags em ✎: troca de óleo, orçado, peça em falta.',
+    '3. Use o PDF do relatório e o orçamento estimado por DTC para entregar o diagnóstico profissional ao cliente.',
+    '4. Evolução por VIN mostra tendência dos mesmos códigos em retornos.',
+  ],
+  shop_boss: [
+    '1. Comece no Dashboard — resumo das últimas 24h, urgências críticas e carros que voltaram.',
+    '2. Tela Histórico mostra todos os atendimentos, com filtros e busca por VIN, cliente, tag.',
+    '3. Evolução por veículo: veja recorrências e orçamento total por carro da sua carteira.',
+    '4. PDF e HTML do relatório com branding da oficina (nome, logo, telefone, endereço).',
+  ],
+  inspector: [
+    '1. Na aba Scan, use ELM Wi-Fi portátil (opcional) ou "Modo demo" se não puder conectar no veículo.',
+    '2. Grave 1 scan por carro com VIN e KM. Use ✎ Notas para checklist de vistoria (chassi batido, pneus 30%, lataria riscada).',
+    '3. Exporta CSV + PDF do relatório em 2 cliques no Histórico ou no Dashboard.',
+    '4. Anexe o relatório HTML como prova objetiva da leitura OBD no check list da compra.',
+  ],
+  fleet: [
+    '1. Atalho inicial: aba Evolução — 1 click para tendências de todos os veículos da frota.',
+    '2. Exportações em massa: CSV consolidado da evolução + relatórios individuais em PDF.',
+    '3. Marque tags em cada atendimento: preventiva, corretiva, pre-ship, recall, revisão 100k.',
+    '4. DTCs recorrentes destacadas em amarelo no topo da Evolução → evita frota parada.',
+  ],
+};
 
 function openHelpOnboarding() {
+  const personas = APP_CONTEXT.persona.personas;
+  const cards = personas.map(p => {
+    const bullets = HELP_PERSONAS_TIPS[p.id] || [];
+    return `
+      <div class="col-12 col-md-6 col-lg-4 mb-3">
+        <div class="card h-100">
+          <div class="card-body">
+            <h6 class="mb-2">${p.emoji} ${esc(p.label)}</h6>
+            <p class="small text-muted mb-2">${esc(p.tagline)}</p>
+            <ol class="small mb-0 ps-3">
+              ${bullets.map(x => `<li class="mb-2">${esc(x)}</li>`).join('')}
+            </ol>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
   const html = `
     <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-xl">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content bg-dark border-secondary text-light">
           <div class="modal-header border-secondary">
-            <h5 class="modal-title" id="helpModalLabel">Guia rápido — qual é o seu perfil?</h5>
+            <h5 class="modal-title" id="helpModalLabel">Guia rápido</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body row g-3">
-            ${PERSONAS.map(p => `
-              <div class="col-md-4">
-                <div class="card h-100">
-                  <div class="card-body">
-                    <h6 class="mb-2">${p.title}</h6>
-                    <ol class="small mb-0 ps-3">
-                      ${p.points.map(x => `<li class="mb-2">${esc(x)}</li>`).join('')}
-                    </ol>
-                  </div>
-                </div>
-              </div>
-            `).join('')}
-            <div class="col-12 mt-3">
+            ${cards}
+            <div class="col-12">
               <div class="card">
                 <div class="card-header small text-muted py-2">Arquitetura / onde os dados ficam</div>
                 <div class="card-body small">
                   <ul class="mb-0 ps-3">
-                    <li>Tudo roda local no seu computador (<code>localhost:8000</code>).</li>
-                    <li>Histórico de scans: <code>~/.autodiag/history.db</code> (SQLite).</li>
-                    <li>Branding: <code>~/.autodiag/config.json</code>.</li>
-                    <li>Análise IA é opcional (via Anthropic). Você pode desmarcar "Sem análise IA".</li>
+                    <li>Tudo roda no seu computador, localmente (<code>localhost:8000</code>).</li>
+                    <li>Histórico: <code>~/.autodiag/history.db</code> (SQLite, backup a vontade).</li>
+                    <li>Branding e perfil: <code>~/.autodiag/config.json</code>.</li>
+                    <li>Análise IA é opcional. Marque "Sem análise IA" no scan para desligar.</li>
                   </ul>
                 </div>
               </div>
             </div>
           </div>
-          <div class="modal-footer border-secondary">
-            <a href="https://github.com/" class="btn btn-outline-secondary btn-sm disabled">Documentação</a>
+          <div class="modal-footer border-secondary justify-content-between">
+            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
+                    data-bs-target="#personaModal" onclick="ensurePersonaModal()">Trocar perfil</button>
             <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Entendi, vamos diagnosticar</button>
           </div>
         </div>
@@ -1396,13 +1618,31 @@ function openHelpOnboarding() {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('helpModal')).show();
 }
 
-// first-run: show onboarding automatically if no last scan label yet + no history
-(async () => {
+async function bootApp() {
   try {
-    const rows = await fetch('/api/history?limit=1').then(r => r.json());
-    if (!rows.length) openHelpOnboarding();
-  } catch (_) { /* ignore */ }
-})();
+    const ctx = await fetch('/api/app-context').then(r => r.json());
+    if (ctx && typeof ctx === 'object') {
+      if (ctx.branding) APP_CONTEXT.branding = ctx.branding;
+      if (ctx.persona) APP_CONTEXT.persona = { ...APP_CONTEXT.persona, ...ctx.persona };
+      if (ctx.version) APP_CONTEXT.version = ctx.version;
+    }
+  } catch (_) { /* fallback to defaults */ }
+  applyPersonaLayout();
+  ensurePersonaModal();
+  if (!APP_CONTEXT.persona.selected) {
+    setTimeout(() => {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('personaModal')).show();
+    }, 250);
+  } else {
+    setTimeout(jumpToPersonaDefaultTab, 50);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.getElementById('nm-tags');
+  if (el) el.addEventListener('input', _renderTagsPreview);
+  bootApp();
+});
 
 // ── tab events ────────────────────────────────────────────────────────────────
 

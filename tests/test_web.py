@@ -312,3 +312,83 @@ class TestApiReportPdf:
             payload = resp.json()
             assert payload.get("error") == "playwright_required"
             assert "playwright" in payload.get("detail", "").lower()
+
+
+class TestApiHealthPingContextPersona:
+    def test_ping_returns_pong_ts(self, client: Any) -> None:
+        resp = client.get("/api/ping")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ping"] == "pong"
+        assert isinstance(data.get("ts"), (int, float))
+        # deve ser rápido e sem tocar no DB; resposta < 200ms, size pequeno
+        assert 0 < len(resp.content) < 120
+
+    def test_health_main_shape_ok(self, client: Any) -> None:
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+        d = resp.json()
+        assert d["status"] == "ok"
+        assert d["service"] == "autodiag"
+        assert isinstance(d["version"], str) and len(d["version"]) >= 3
+        assert isinstance(d["pid"], int) and d["pid"] > 0
+        assert isinstance(d["uptime_seconds"], (int, float)) and d["uptime_seconds"] >= 0
+        assert isinstance(d["tenant"], str) and len(d["tenant"]) > 0
+        assert "started_at" in d and "T" in d["started_at"]
+        db = d.get("database") or {}
+        for key in ("path", "size_bytes", "sessions", "critical_sessions"):
+            assert key in db, (key, db.keys())
+        assert isinstance(db["size_bytes"], int) and db["size_bytes"] >= 0
+        # alias /health deve ter mesmo conteúdo que /api/health
+        r2 = client.get("/health")
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "ok"
+        assert r2.json()["pid"] == d["pid"]
+
+    def test_persona_endpoints_read_and_write(self, client: Any) -> None:
+        # 1) GET: retorna lista + ativo + selected false por default
+        r1 = client.get("/api/persona")
+        assert r1.status_code == 200
+        g = r1.json()
+        assert isinstance(g["personas"], list) and len(g["personas"]) == 4
+        ids = [p["id"] for p in g["personas"]]
+        for required in ("mechanic", "shop_boss", "inspector", "fleet"):
+            assert required in ids
+        assert g["active_id"] in ("mechanic", "shop_boss", "inspector", "fleet")
+        assert "active_meta" in g and g["active_meta"]["label"]
+
+        # 2) PUT fleet → valida ativo mudou
+        r2 = client.put("/api/persona", json={"id": "fleet", "mark_selected": True})
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert d2["ok"] is True
+        assert d2["active_id"] == "fleet"
+        assert d2["active_meta"]["label"] == "Gestor(a) de Frota"
+        assert d2["selected"] is True
+
+        # 3) GET → reflita o PUT
+        r3 = client.get("/api/persona")
+        assert r3.status_code == 200
+        assert r3.json()["active_id"] == "fleet"
+        assert r3.json()["selected"] is True
+
+        # 4) PUT valor inválido → fallback para default mechanic, sem crash
+        r4 = client.put("/api/persona", json={"id": "nao-existe", "mark_selected": True})
+        assert r4.status_code == 200
+        assert r4.json()["active_id"] == "mechanic"
+
+    def test_app_context_shape_and_stability(self, client: Any) -> None:
+        """1 fetch: branding + persona + version + tenant, sem crash."""
+        resp = client.get("/api/app-context")
+        assert resp.status_code == 200
+        data = resp.json()
+        for top in ("branding", "persona", "version", "tenant"):
+            assert top in data
+        assert set(data["branding"].keys()) == {
+            "workshop_name", "mechanic_name", "phone", "email",
+            "address", "logo_url", "notes_header",
+        }
+        p = data["persona"]
+        assert len(p["personas"]) == 4
+        assert p["active_id"] in {"mechanic", "shop_boss", "inspector", "fleet"}
+        assert isinstance(p["selected"], bool)
