@@ -11,7 +11,6 @@ from autodiag.core.ev_support import (
     detectar_propulsao_por_vin,
     hv_fields_for_brand,
 )
-from autodiag.elm327.reader import ELM327Reader
 from autodiag.elm327.sim import SimulatedELM327
 
 
@@ -20,7 +19,7 @@ class TestApplyHvFormula:
 
     def test_u16_01_typical_soc(self) -> None:
         # SoC = 52.3% → U16 = 523 = 0x020B
-        raw = (int(52.3 / 0.1)).to_bytes(2, "big", signed=False)
+        raw = (round(52.3 / 0.1)).to_bytes(2, "big", signed=False)
         assert apply_hv_formula(raw, "U16 * 0.1") == 52.3
 
     def test_s16_01_typical_current_regen(self) -> None:

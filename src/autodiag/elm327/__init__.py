@@ -1,5 +1,5 @@
 """Camada de acesso ao adaptador OBD2 — real (ELM327) ou simulado (demo)."""
-from typing import Protocol
+from typing import Any, Protocol
 
 from autodiag.elm327.reader import (
     DTCRecord,
@@ -29,6 +29,11 @@ class OBDReader(Protocol):
     def get_supported_pids(self) -> list[str]: ...
     def clear_dtcs(self) -> bool: ...
     def get_live_pids(self) -> LivePIDs: ...
+    def read_high_voltage(
+        self,
+        fields: list[dict[str, Any]],
+        vin: str | None = None,
+    ) -> dict[str, Any]: ...
 
 
 def create_reader(

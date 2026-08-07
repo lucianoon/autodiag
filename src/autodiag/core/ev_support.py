@@ -385,12 +385,12 @@ def apply_hv_formula(raw_bytes: bytes, formula: str) -> float | int | None:
             if len(raw_bytes) < 2:
                 return None
             u16 = int.from_bytes(raw_bytes[:2], "big", signed=False)
-            return fn(u16)  # type: ignore[misc]
+            return fn(u16)
         # S16
         if len(raw_bytes) < 2:
             return None
         s16 = int.from_bytes(raw_bytes[:2], "big", signed=True)
-        return fn(s16)  # type: ignore[misc]
+        return fn(s16)
     # Fórmula sem padrão conhecido: devolve só os primeiros 2 bytes como U16 raw,
     # útil para debug de campos novos (sem escala).
     if len(raw_bytes) < 2:
