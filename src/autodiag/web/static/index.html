@@ -997,7 +997,9 @@ async function confirmDeleteSession(sid, el, context) {
   );
   if (!ok) return;
   try {
-    const resp = await fetch(`/api/session/${sid}`, {method: 'DELETE'});
+    // purge=true: a confirmação acima promete exclusão PERMANENTE (LGPD).
+    // Sem o purge, o soft-delete manteria o registro no SQLite para sempre.
+    const resp = await fetch(`/api/session/${sid}?purge=true`, {method: 'DELETE'});
     if (resp.status === 404) {
       alert('Este diagnóstico já foi excluído anteriormente.');
       refreshViewsAfterDelete(context);

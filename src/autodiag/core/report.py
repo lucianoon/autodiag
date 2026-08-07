@@ -197,18 +197,21 @@ def render_report_html(report: Report) -> str:
     _CODE = re.compile(r"`([^`]+?)`")
 
     def _inline(safe: str) -> str:
+        # `safe` já chega HTML-escapado pelo chamador; re-escapar os grupos
+        # capturados corromperia a saída ("Silva & Cia" viraria
+        # "Silva &amp;amp; Cia" no laudo entregue ao cliente).
         code_class = (
             "text-info bg-dark-subtle border border-secondary "
             "px-1 py-0 rounded-1 small"
         )
         safe = _CODE.sub(
-            lambda m: f'<code class="{code_class}">{esc(m.group(1))}</code>',
+            lambda m: f'<code class="{code_class}">{m.group(1)}</code>',
             safe,
         )
-        safe = _BOLD.sub(lambda m: f"<strong>{esc(m.group(1))}</strong>", safe)
+        safe = _BOLD.sub(lambda m: f"<strong>{m.group(1)}</strong>", safe)
         safe = _ITALIC.sub(
             lambda m: (
-                f"{esc(m.group(1))}<em>{esc(m.group(2))}</em>{esc(m.group(3))}"
+                f"{m.group(1)}<em>{m.group(2)}</em>{m.group(3)}"
             ),
             safe,
         )

@@ -33,9 +33,9 @@ def render_html_to_pdf(html: str, output_path: Path) -> Path:
     """
     if not _playwright_sync_api_available():
         raise RuntimeError(
-            "Biblioteca `playwright` não está instalada. Rode "
-            "`pip install playwright` (ou `uv add playwright`) depois "
-            "`playwright install chromium` para habilitar exportação PDF."
+            "Exportação de PDF requer o extra opcional: rode "
+            '`pip install "autodiag[pdf]"` e depois '
+            "`playwright install chromium` para habilitá-la."
         )
 
     output_path = Path(output_path)

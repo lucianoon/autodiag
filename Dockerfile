@@ -22,7 +22,7 @@ COPY src/ ./src/
 
 RUN uv venv /opt/venv \
  && VIRTUAL_ENV=/opt/venv uv pip install --system --no-cache --python=/opt/venv/bin/python \
-        -e . \
+        -e ".[pdf]" \
  && /opt/venv/bin/python -c "import autodiag; print('autodiag', autodiag.__version__ if hasattr(autodiag, '__version__') else 'ok')"
 
 
@@ -55,10 +55,14 @@ COPY --from=build /opt/venv /opt/venv
 COPY --from=build /app /app
 
 # Chromium do Playwright: ~120MB. Skip se quiser imagem mínima e só usar HTML/CSV.
-# Para deploy em escala sem PDF, comente a linha abaixo e a anterior do apt com libs gtk.
-RUN python -c "import shutil, subprocess, sys" 2>/dev/null; \
-  if /opt/venv/bin/python -c "import playwright.sync_api" 2>/dev/null; then \
-    /opt/venv/bin/playwright install --with-deps chromium 2>/dev/null || true; \
+# Para deploy em escala sem PDF, comente o bloco abaixo e o apt com libs gtk.
+# PLAYWRIGHT_BROWSERS_PATH fora de /root: o install roda como root, mas o
+# runtime é o usuário 10007 — sem isso o Chromium fica ilegível e o PDF
+# falha em runtime mesmo com o browser presente na imagem.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN if /opt/venv/bin/python -c "import playwright.sync_api" 2>/dev/null; then \
+    /opt/venv/bin/playwright install --with-deps chromium \
+    && chown -R 10007:10007 /ms-playwright; \
   fi
 
 WORKDIR /app

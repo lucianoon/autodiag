@@ -210,3 +210,24 @@ def test_hv_block_shows_real_values_when_hv_data_present(history):
     assert "52,30" in html
 
 
+
+
+class TestNotesInlineEscaping:
+    def test_ampersand_and_quotes_are_escaped_exactly_once(self):
+        """Regressão: _inline re-escapava os grupos capturados e o laudo
+        saía literalmente com "Silva &amp;amp; Cia" para o cliente."""
+        from autodiag.core.report import build_report, render_report_html
+
+        row = {
+            "id": 1, "ts": "07/08/2026 10:00", "vin": "9BWZZZ377VT004251",
+            "vehicle_label": "VW Gol", "dtc_codes": [], "urgency": "informativo",
+            "diagnosis": "", "triage": None, "cost_min": 0, "cost_max": 0,
+            "km": 1000, "tags": None, "freeze_frame": None, "readiness": None,
+            "rpm": None, "speed": None, "coolant_temp": None, "maf": None,
+            "fuel_trim_short": None, "fuel_trim_long": None, "o2": None,
+            "notes": 'Cliente **Silva & Cia** disse: *ruido "forte"* em `2ª & ré`',
+        }
+        html = render_report_html(build_report(row, None))
+        assert "<strong>Silva &amp; Cia</strong>" in html
+        assert "&amp;amp;" not in html
+        assert "&amp;quot;" not in html
