@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+import re
 import socket
 from dataclasses import dataclass
 
@@ -179,6 +180,85 @@ def render_report_html(report: Report) -> str:
 
     def esc(x) -> str:
         return html.escape(str(x if x is not None else "—"))
+
+    _CHECKLIST = re.compile(r"^\s*[-*+]\s*\[([ xX])\]\s*(.*)$")
+    _BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
+    _ITALIC = re.compile(r"(^|\W)\*(?=\S)(.+?)(?<=\S)\*(\W|$)")
+    _CODE = re.compile(r"`([^`]+?)`")
+
+    def _inline(safe: str) -> str:
+        code_class = (
+            "text-info bg-dark-subtle border border-secondary "
+            "px-1 py-0 rounded-1 small"
+        )
+        safe = _CODE.sub(
+            lambda m: f'<code class="{code_class}">{esc(m.group(1))}</code>',
+            safe,
+        )
+        safe = _BOLD.sub(lambda m: f"<strong>{esc(m.group(1))}</strong>", safe)
+        safe = _ITALIC.sub(
+            lambda m: (
+                f"{esc(m.group(1))}<em>{esc(m.group(2))}</em>{esc(m.group(3))}"
+            ),
+            safe,
+        )
+        return safe
+
+    def render_notes_static(raw: str) -> str:
+        if not raw:
+            return ""
+        lines = str(raw).splitlines()
+        out: list[str] = []
+        in_para = False
+        para_close = "</div>"
+
+        def close_para() -> None:
+            nonlocal in_para
+            if in_para:
+                out.append(para_close)
+                in_para = False
+
+        for line in lines:
+            trimmed = line.rstrip()
+            if not trimmed:
+                close_para()
+                out.append("<div style='height:.4rem'></div>")
+                continue
+            m = _CHECKLIST.match(trimmed)
+            if m:
+                close_para()
+                checked = m.group(1).strip().lower() == "x"
+                text = _inline(esc(m.group(2) or ""))
+                symbol = "☑" if checked else "☐"
+                strike_css = (
+                    " style='text-decoration:line-through;color:#8b949e'"
+                    if checked
+                    else ""
+                )
+                if not text:
+                    text = (
+                        "<span class='text-muted opacity-75'>(sem texto)</span>"
+                    )
+                symbol_span = (
+                    "<span "
+                    "style='display:inline-block;width:1em;margin-right:.3em;"
+                    f"opacity:.85'>{symbol}</span>"
+                )
+                out.append(
+                    "<div class='mb-1'>"
+                    + symbol_span
+                    + f"<span{strike_css}>{text}</span>"
+                    + "</div>"
+                )
+                continue
+            if not in_para:
+                out.append("<div class='mb-1 small'>")
+                in_para = True
+            else:
+                out.append("<br />")
+            out.append(_inline(esc(trimmed)))
+        close_para()
+        return "".join(out)
 
     def qr_block() -> str:
         raw_url = report.download_url
@@ -406,7 +486,7 @@ def render_report_html(report: Report) -> str:
                 )
                 + "</div>"
             )
-        notes_html = esc(notes) if notes else "<span class='text-muted'>—</span>"
+        notes_html = render_notes_static(notes) if notes else "<span class='text-muted'>—</span>"
         return (
             "<div class='col-12'>"
             "<div class='card'>"

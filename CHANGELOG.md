@@ -39,6 +39,25 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   após salvar. **1ª execução**: modal de seleção abre sozinho em 250ms; depois de
   escolhido o perfil, o Guia Rápido (`#helpModal`) mostra passos específicos
   por persona em vez do texto genérico antigo.
+- **🗑️ Excluir diagnóstico (UI oficial para o DELETE endpoint)**:
+  botão `🗑️ Excluir` no card "Último diagnóstico" (dashboard) e `🗑️` na coluna
+  de ações do Histórico. Usa `window.confirm` nativo + aviso de hard delete
+  irreversível. Animais de remoção (fade + slide) + auto refresh de Dashboard,
+  Histórico e lista de Veículos após exclusão. **404 já existe** dispara aviso se
+  item já foi excluído em outra aba.
+- **Notes renderizadas como checklist markdown interativo**:
+  `- [x]` / `- [ ]` vira checkbox clicável nativo (Bootstrap 5 form-check),
+  clique → atualiza o texto do notes (regex line-preserving, sem quebrar o resto
+  das linhas) → `PATCH /api/session/{sid}` via `_NOTE_SAVE_QUEUE` serializada
+  (1 flush de cada vez por sid, sem sobrescrever writes rápidos).
+  **Inline markdown seguro** também nas notas: `**negrito**`, `*itálico*`,
+  `` `código` `` → formatação, escapando HTML e removendo risco XSS.
+  Preview em dashboard e Histórico já clica.
+- **Relatório HTML entregue ao cliente**: `notes_block()` do
+  [report.py](src/autodiag/core/report.py) agora renderiza **☑/☐** estático,
+  negrito, itálico, `código` — checklist de manutenção, orçamento e
+  próximos passos aparecem formatados no PDF/HTML impresso (não há
+  interatividade no PDF, óbvio, mas a formatação está lá).
 
 ### Alterado
 

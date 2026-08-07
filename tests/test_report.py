@@ -99,6 +99,38 @@ def test_notes_block_renders_if_not_empty(history):
     assert "troca filtro" in html
 
 
+def test_notes_renders_static_checklist_and_safe_markdown(history):
+    notes = (
+        "- [x] Ler e apagar DTCs via scanner\n"
+        "- [ ] Trocar filtro de combustível\n"
+        "- [ ] **Confirmar** com oficina *amigo* do João\n"
+        "Parágrafo normal com `código inline` aqui.\n"
+        "\n"
+        "Segundo parágrafo. <script>alert('x')</script>\n"
+    )
+    sid = history.save(_session(notes=notes))
+    html = render_report_html(build_report(history.get(sid), None))
+    # 3 checkboxes: 1 marcado + 2 vazios (☑ = 1, ☐ = 2)
+    assert html.count("☑") == 1
+    assert html.count("☐") == 2
+    # Checklist marcado = riscado
+    assert "text-decoration:line-through" in html
+    # **bold** e *italic* renderizados
+    assert "<strong>Confirmar</strong>" in html
+    assert "<em>amigo</em>" in html
+    # `code` inline
+    assert '<code class="text-info' in html and "código inline" in html
+    # Parágrafos separados por div de espaçamento (2 blocos de texto separados)
+    assert "Parágrafo normal com" in html
+    assert "Segundo parágrafo" in html
+    assert html.count("<div style='height:.4rem'></div>") == 1
+    # XSS é escapado (nunca haverá <script> vivo em HTML seguro)
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    # Cabeçalho do bloco de notas aparece
+    assert "Observações / Próximos passos" in html
+
+
 def test_freeze_frame_renders_in_html(history):
     sid = history.save(_session(freeze_frame={
         "dtc_code": "P0171",

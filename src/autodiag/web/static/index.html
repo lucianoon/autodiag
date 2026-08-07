@@ -688,7 +688,7 @@ async function loadDash() {
       : '';
     const preview = (last.diagnosis || '').slice(0, 500);
     html += `<div class="col-12">
-      <div class="card" style="border-left: 3px solid var(--bs-${color})">
+      <div class="card" id="last-scan-card" style="border-left: 3px solid var(--bs-${color})">
         <div class="card-header small text-muted py-2 d-flex justify-content-between">
           <span>Último diagnóstico${freezeBadge}</span><span>${esc(last.ts)}</span>
         </div>
@@ -700,7 +700,7 @@ async function loadDash() {
           ${tagHtml}
           <div class="mb-3">${dtcsHtml}</div>
           ${last.notes
-            ? `<div class="mb-3 small text-muted border-start border-secondary ps-2 mb-3">
+            ? `<div class="mb-3 small border-start border-secondary ps-2 mb-3 render-notes" data-sid="${esc(last.id)}">
                  ${esc(last.notes)}
                </div>`
             : ''}
@@ -709,6 +709,10 @@ async function loadDash() {
             <a class="btn btn-outline-secondary btn-sm ms-2" href="/report/${esc(last.id)}/pdf">📄 PDF</a>
             <a class="btn btn-outline-secondary btn-sm ms-2" href="/report/${esc(last.id)}/download">Baixar HTML</a>
             <button class="btn btn-outline-primary btn-sm" onclick="openNotesModal(${last.id})">✎ Notas / Tags</button>
+            <button class="btn btn-outline-danger btn-sm ms-auto"
+                    onclick="confirmDeleteSession(${last.id}, document.querySelector('#last-scan-card'), 'dashboard')">
+              🗑️ Excluir
+            </button>
           </div>
           ${preview ? `<div class="analysis-box" style="max-height:200px;overflow:auto">${esc(preview)}${last.diagnosis.length>500?'…':''}</div>` : ''}
         </div>
@@ -722,9 +726,51 @@ async function loadDash() {
   }
 
   document.getElementById('dash-content').innerHTML = html;
+  if (last) activateAllNoteChecklists();
 }
 
-// ── scan ──────────────────────────────────────────────────────────────────────
+// ── delete confirm + refresh UI ───────────────────────────────────────────────
+
+async function confirmDeleteSession(sid, el, context) {
+  const ok = window.confirm(
+    `Confirma exclusão permanente do diagnóstico #${sid}?\n` +
+    `Esta ação é irreversível (hard delete do banco SQLite local).`
+  );
+  if (!ok) return;
+  try {
+    const resp = await fetch(`/api/session/${sid}`, {method: 'DELETE'});
+    if (resp.status === 404) {
+      alert('Este diagnóstico já foi excluído anteriormente.');
+      refreshViewsAfterDelete(context);
+      return;
+    }
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    // hard delete: remove visual marker
+    if (el) {
+      if (context === 'history-row') {
+        el.style.transition = 'opacity .25s ease, transform .25s ease';
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(12px)';
+        setTimeout(() => el.remove(), 250);
+      } else {
+        el.style.transition = 'opacity .25s ease';
+        el.style.opacity = '0';
+      }
+    }
+    setTimeout(() => refreshViewsAfterDelete(context), 260);
+  } catch (e) {
+    alert('Falha ao excluir: ' + e);
+  }
+}
+
+function refreshViewsAfterDelete(_context) {
+  loadDash();
+  const histActive = document.getElementById('tab-hist')?.classList.contains('active');
+  if (histActive) loadHistory();
+  loadVehicles();
+}
 
 let scanActive = false;
 
@@ -987,7 +1033,9 @@ async function loadHistory() {
     const tagsPreview = (s.tags && s.tags.length)
       ? s.tags.slice(0, 3).map(t => `<span class="badge bg-info text-dark small ms-1">${esc(t)}</span>`).join('')
       : '';
-    const notesPreview = s.notes ? `<small class="text-muted d-block">${esc(s.notes.slice(0,48))}${s.notes.length>48?'…':''}</small>` : '';
+    const notesPreview = s.notes
+      ? `<div class="render-notes" data-sid="${esc(s.id)}"><small class="d-block">${esc(s.notes.slice(0,160))}${s.notes.length>160?'…':''}</small></div>`
+      : '';
     const freezePreview = (s.freeze_frame && Object.keys(s.freeze_frame).some(k => k !== 'raw' && s.freeze_frame[k] != null && s.freeze_frame[k] !== ''))
       ? `<span class="badge text-bg-info small me-1">❄</span>`
       : '';
@@ -1004,9 +1052,13 @@ async function loadHistory() {
         <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}" target="_blank">Relatório</a>
         <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}/pdf">📄</a>
         <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}/download">Baixar</a>
+        <button class="btn btn-outline-danger btn-sm ms-1"
+                onclick="confirmDeleteSession(${esc(s.id)}, this.closest('tr'), 'history-row')"
+                title="Excluir este diagnóstico">🗑️</button>
       </td>
     </tr>`;
   }).join('');
+  activateAllNoteChecklists();
 }
 
 // ── DTC lookup ────────────────────────────────────────────────────────────────
@@ -1529,6 +1581,164 @@ async function saveSessionNotes() {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('notesModal')).hide();
   if (document.getElementById('tab-hist').classList.contains('active', 'show')) loadHistory();
   if (document.getElementById('tab-dash').classList.contains('active', 'show')) loadDash();
+}
+
+// ── markdown checklist rendering (interactive checkbox) ───────────────────────
+// Regexes for checklist and basic safe markdown in notes. No html injection.
+
+const CHECKBOX_LINE_RE = /^\s*[-*+]\s*\[([ xX])\]\s*(.*)$/;
+const BOLD_RE = /\*\*(?=\S)(.+?)(?<=\S)\*\*/g;
+const ITALIC_RE = /(^|\W)\*(?=\S)(.+?)(?<=\S)\*(\W|$)/g;
+const CODE_RE = /`([^`]+?)`/g;
+
+function renderNotesToHtml(text, opts) {
+  if (text == null || text === '') return '';
+  const interactive = !!(opts && opts.interactive);
+  const escaped = esc(String(text));
+  const lines = escaped.split(/\r?\n/);
+  const out = [];
+  let inParagraph = false;
+  const flushPara = () => {
+    if (inParagraph) {
+      out.push('</div>');
+      inParagraph = false;
+    }
+  };
+  lines.forEach((rawLine, idx) => {
+    const line = rawLine.replace(/\s+$/u, '');
+    if (line === '') {
+      flushPara();
+      out.push('<div style="height:.4rem"></div>');
+      return;
+    }
+    const m = line.match(CHECKBOX_LINE_RE);
+    if (m) {
+      flushPara();
+      const checked = m[1] && (m[1].toLowerCase() === 'x');
+      const content = inlineMarkdown(m[2] || '');
+      const attrs = [
+        `type="checkbox"`,
+        `class="form-check-input me-2"`,
+        `data-idx="${Number(idx)}"`,
+        `data-check="1"`,
+        checked ? `checked` : ``,
+      ].filter(Boolean).join(' ');
+      if (interactive) {
+        out.push(
+          `<div class="form-check mb-1">` +
+            `<input ${attrs} />` +
+            `<label class="form-check-label${checked ? ' text-decoration-line-through text-muted' : ''}">${content || '<span class="text-muted opacity-75">(sem texto)</span>'}</label>` +
+          `</div>`
+        );
+      } else {
+        out.push(
+          `<div class="mb-1">` +
+            `<span style="display:inline-block;width:1em;margin-right:.3em;opacity:.85">` +
+              (checked ? '☑' : '☐') +
+            `</span>` +
+            `<span${checked ? ' style="text-decoration:line-through;color:#8b949e"' : ''}>${content}</span>` +
+          `</div>`
+        );
+      }
+      return;
+    }
+    if (!inParagraph) {
+      out.push('<div class="mb-1 small">');
+      inParagraph = true;
+    } else {
+      out.push('<br />');
+    }
+    out.push(inlineMarkdown(line));
+  });
+  flushPara();
+  return out.join('');
+}
+
+function inlineMarkdown(escapedHtml) {
+  let s = escapedHtml;
+  s = s.replace(CODE_RE, (_m, code) =>
+    `<code class="text-info bg-dark-subtle border border-secondary px-1 py-0 rounded-1 small">${code}</code>`
+  );
+  s = s.replace(BOLD_RE, (_m, text) => `<strong>${text}</strong>`);
+  s = s.replace(ITALIC_RE, (_m, before, text, after) => `${before}<em>${text}</em>${after}`);
+  return s;
+}
+
+function getCheckboxLineState(line) {
+  const m = line.match(CHECKBOX_LINE_RE);
+  if (!m) return null;
+  return {checked: m[1].toLowerCase() === 'x', text: m[2] || ''};
+}
+
+function applyCheckboxInNotes(rawNotes, lineIdx, newChecked) {
+  if (!rawNotes) return rawNotes;
+  const lines = String(rawNotes).split(/\r?\n/);
+  if (lineIdx < 0 || lineIdx >= lines.length) return rawNotes;
+  const raw = lines[lineIdx];
+  const m = raw.match(/^(\s*)([-*+]\s*)(\[)([ xX])(\]\s*)(.*)$/);
+  if (!m) return rawNotes;
+  const marker = newChecked ? 'x' : ' ';
+  lines[lineIdx] = `${m[1]}${m[2]}${m[3]}${marker}${m[5]}${m[6]}`;
+  return lines.join('\n');
+}
+
+let _NOTE_SAVE_QUEUE = new Map();
+async function flushOneNoteSave(sid) {
+  const state = _NOTE_SAVE_QUEUE.get(sid);
+  if (!state) return;
+  const nextNotes = state.pending;
+  state.pending = null;
+  state.flushing = true;
+  try {
+    await fetch(`/api/session/${sid}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({notes: nextNotes}),
+    });
+  } finally {
+    const st = _NOTE_SAVE_QUEUE.get(sid);
+    state.flushing = false;
+    if (st && st.pending != null) {
+      flushOneNoteSave(sid);
+    } else {
+      _NOTE_SAVE_QUEUE.delete(sid);
+    }
+  }
+}
+function scheduleNoteSave(sid, newNotes) {
+  let state = _NOTE_SAVE_QUEUE.get(sid);
+  if (!state) { state = {flushing:false, pending:null}; _NOTE_SAVE_QUEUE.set(sid, state); }
+  state.pending = newNotes;
+  if (!state.flushing) flushOneNoteSave(sid);
+}
+
+function activateAllNoteChecklists() {
+  document.querySelectorAll('.render-notes[data-sid]').forEach(el => {
+    const sid = Number(el.getAttribute('data-sid'));
+    if (!sid) return;
+    const notes = el.dataset.rawNotes != null
+      ? el.dataset.rawNotes
+      : (el.innerText || el.textContent || '').replace(/\u00A0/g, ' ').trim();
+    // quando temos HTML já com esc(), extraímos o original via dataset-notes:
+    el.dataset.rawNotes = notes;
+    const html = renderNotesToHtml(notes, {interactive: true});
+    if (!html) return;
+    el.innerHTML = html;
+    el.querySelectorAll('input[type="checkbox"][data-check="1"][data-idx]').forEach(input => {
+      input.addEventListener('change', async () => {
+        const idx = Number(input.getAttribute('data-idx'));
+        const label = input.nextElementSibling;
+        const current = el.dataset.rawNotes || '';
+        const newNotes = applyCheckboxInNotes(current, idx, input.checked);
+        el.dataset.rawNotes = newNotes;
+        if (label) {
+          label.classList.toggle('text-decoration-line-through', input.checked);
+          label.classList.toggle('text-muted', input.checked);
+        }
+        scheduleNoteSave(sid, newNotes);
+      });
+    });
+  });
 }
 
 // ── persona aware app boot / first-run wizard + persona selector modal ────────

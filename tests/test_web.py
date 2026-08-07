@@ -108,6 +108,22 @@ class TestApiPatchSession:
         assert resp.status_code == 200, resp.text
         assert resp.json()["tags"] == ["ok"]
 
+    def test_notes_checklist_roundtrip(self, hist: History, client: Any) -> None:
+        """Patch de checklist markdown é salvo exato e refletido no GET."""
+        sid = hist.save(_session(notes=""))
+        raw = (
+            "- [x] Apagar DTCs\n"
+            "- [ ] Trocar filtro\n"
+            "- [x] Confirmar VIN\n"
+        )
+        normalized = raw.strip()  # endpoint faz .strip()
+        patched = client.patch(f"/api/session/{sid}", json={"notes": raw})
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["notes"] == normalized
+        fetched = client.get(f"/api/session/{sid}")
+        assert fetched.status_code == 200
+        assert fetched.json()["notes"] == normalized
+
     def test_notes_not_string_400(self, hist: History, client: Any) -> None:
         sid = hist.save(_session())
         resp = client.patch(f"/api/session/{sid}", json={"notes": 123})
