@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import base64
 import html
+import io
+import socket
 from dataclasses import dataclass
 
 from autodiag.core.config import Branding, get_branding
 from autodiag.core.dtc import lookup
 from autodiag.core.inspection import build_inspection_verdict
+
+try:
+    import qrcode  # type: ignore[import-untyped]
+    from qrcode.image.pil import PilImage  # type: ignore[import-untyped]
+
+    _QRCODE_AVAILABLE = True
+except Exception:  # pragma: no cover - dependência opcional só para runtime
+    _QRCODE_AVAILABLE = False
+    qrcode = None
+    PilImage = None
 
 
 @dataclass(frozen=True)
@@ -16,6 +29,51 @@ class Report:
     dtcs: list[dict]
     diff: dict
     branding: Branding | None = None
+    download_url: str | None = None
+
+
+def _local_ip_candidates() -> list[str]:
+    """Retorna IPs locais candidatos para montar URL de download via QR."""
+    candidates: list[str] = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            if ip:
+                candidates.append(ip)
+        finally:
+            s.close()
+    except Exception:
+        pass
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            raw = info[4][0]
+            if not isinstance(raw, str):
+                continue
+            ip_str = raw
+            if ip_str and ip_str not in candidates and not ip_str.startswith("127."):
+                candidates.append(ip_str)
+    except Exception:
+        pass
+    for extra in ("127.0.0.1", "localhost"):
+        if extra not in candidates:
+            candidates.append(extra)
+    return candidates
+
+
+def _qrcode_data_uri(url: str) -> str | None:
+    if not _QRCODE_AVAILABLE or not url or qrcode is None:
+        return None
+    try:
+        img = qrcode.make(url, image_factory=PilImage, box_size=4, border=2)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+    except Exception:
+        return None
 
 
 def build_report(
@@ -23,6 +81,7 @@ def build_report(
     previous: dict | None = None,
     vehicle_history: list[dict] | None = None,
     branding: Branding | None = None,
+    download_url: str | None = None,
 ) -> Report:
     if branding is None:
         branding = get_branding()
@@ -107,6 +166,7 @@ def build_report(
         dtcs=dtcs,
         diff=diff,
         branding=branding,
+        download_url=download_url,
     )
 
 
@@ -118,6 +178,31 @@ def render_report_html(report: Report) -> str:
 
     def esc(x) -> str:
         return html.escape(str(x if x is not None else "—"))
+
+    def qr_block() -> str:
+        raw_url = report.download_url
+        if not raw_url:
+            candidates = _local_ip_candidates()
+            ip = candidates[0] if candidates else "127.0.0.1"
+            raw_url = f"http://{ip}:8000/report/{sid}/download"
+        data_uri = _qrcode_data_uri(raw_url)
+        if not data_uri:
+            return ""
+        return (
+            '<div class="card mt-3 p-3 d-flex flex-row '
+            "justify-content-between align-items-center flex-wrap gap-2\" "
+            'style="background:#010409;border:1px solid #30363d;">'
+            '<div class="small text-muted"><span class="me-2">📱 '
+            '<strong class="text-white">Baixe no celular</strong></span>'
+            "· escaneie o QR ou acesse "
+            f'<a href="{esc(raw_url)}" target="_blank" rel="noopener" '
+            f'class="text-decoration-underline">{esc(raw_url)}</a>'
+            "</div>"
+            f'<img src="{esc(data_uri)}" alt="QR de download" '
+            'style="width:96px;height:96px;image-rendering:pixelated;'
+            'background:#fff;border-radius:4px;">'
+            "</div>"
+        )
 
     sev = {"critico": "danger", "atencao": "warning", "informativo": "info"}
     sev_cls = sev.get(s.get("urgency") or "informativo", "secondary")
@@ -631,6 +716,7 @@ def render_report_html(report: Report) -> str:
       </div>
 
       {notes_block()}
+      {qr_block()}
     </div>
   </div>
 </body>

@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ class Session:
     tags: list[str] | None = None
     freeze_frame: dict | None = None
     readiness: dict | None = None
+    deleted_at: str | None = None
 
 
 class History:
@@ -96,6 +98,8 @@ class History:
             self._con.execute("ALTER TABLE sessions ADD COLUMN freeze_frame TEXT")
         if "readiness" not in cols:
             self._con.execute("ALTER TABLE sessions ADD COLUMN readiness TEXT")
+        if "deleted_at" not in cols:
+            self._con.execute("ALTER TABLE sessions ADD COLUMN deleted_at TEXT")
         self._con.commit()
 
     def save(self, s: Session) -> int:
@@ -158,9 +162,16 @@ class History:
         self._con.commit()
         return self.get(sid)
 
-    def list(self, limit: int = 10) -> builtins.list[dict[str, Any]]:
+    def list(
+        self,
+        limit: int = 10,
+        *,
+        include_deleted: bool = False,
+    ) -> builtins.list[dict[str, Any]]:
+        where_extra = "" if include_deleted else " WHERE deleted_at IS NULL"
+        order_and_limit = " ORDER BY id DESC LIMIT ?"
         rows = self._con.execute(
-            "SELECT * FROM sessions ORDER BY id DESC LIMIT ?", (limit,)
+            f"SELECT * FROM sessions{where_extra}{order_and_limit}", (limit,)
         ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
@@ -168,29 +179,71 @@ class History:
         if not vin:
             return []
         rows = self._con.execute(
-            "SELECT * FROM sessions WHERE vin=? ORDER BY id DESC LIMIT ?",
+            "SELECT * FROM sessions WHERE vin=? AND deleted_at IS NULL "
+            "ORDER BY id DESC LIMIT ?",
             (vin, limit),
         ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
-    def get(self, sid: int) -> dict | None:
-        row = self._con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+    def get(self, sid: int, *, include_deleted: bool = False) -> dict | None:
+        where_extra = "" if include_deleted else " AND deleted_at IS NULL"
+        row = self._con.execute(
+            f"SELECT * FROM sessions WHERE id=?{where_extra}", (sid,)
+        ).fetchone()
         if not row:
             return None
         return self._row_to_dict(row)
+
+    def delete_session(self, sid: int, *, purge: bool = False,
+                       ts_deleted: str | None = None) -> bool:
+        existing = self.get(sid, include_deleted=False)
+        if existing is None:
+            return False
+        ts = ts_deleted or datetime.now().isoformat(timespec="seconds")
+        if purge:
+            self._con.execute("DELETE FROM sessions WHERE id=?", (sid,))
+        else:
+            self._con.execute(
+                "UPDATE sessions SET deleted_at = ? WHERE id = ?", (ts, sid)
+            )
+        self._con.commit()
+        return True
+
+    def purge_deleted_older_than(self, days: int = 30) -> int:
+        if days < 0:
+            return 0
+        cur = self._con.execute(
+            "DELETE FROM sessions WHERE deleted_at IS NOT NULL "
+            "AND julianday('now') - julianday(deleted_at) >= ?",
+            (days,),
+        )
+        self._con.commit()
+        return cur.rowcount or 0
+
+    def restore_session(self, sid: int) -> bool:
+        existing = self.get(sid, include_deleted=True)
+        if existing is None:
+            return False
+        cur = self._con.execute(
+            "UPDATE sessions SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+            (sid,),
+        )
+        self._con.commit()
+        return bool(cur.rowcount)
 
     def previous_for_vin(self, vin: str, *, before_id: int) -> dict | None:
         if not vin:
             return None
         row = self._con.execute(
-            "SELECT * FROM sessions WHERE vin=? AND id < ? ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM sessions WHERE vin=? AND id < ? AND deleted_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
             (vin, before_id),
         ).fetchone()
         if not row:
             return None
         d = dict(row)
         d["dtc_codes"] = json.loads(d["dtc_codes"] or "[]")
-        d["triage"] = json.loads(d["triage_json"] or "null")
+        d["triage"] = json.loads(d.get("triage_json") or "null")
         d.pop("triage_json", None)
         return d
 
@@ -198,7 +251,7 @@ class History:
         rows = self._con.execute("""
             SELECT vin, vehicle_label, urgency, id, ts
             FROM sessions
-            WHERE vin IS NOT NULL AND vin <> ''
+            WHERE vin IS NOT NULL AND vin <> '' AND deleted_at IS NULL
             ORDER BY id DESC
         """).fetchall()
         seen: dict[str, dict[str, Any]] = {}
@@ -221,14 +274,20 @@ class History:
         return [seen[v] for v in order]
 
     def summary(self) -> dict:
-        total = self._con.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        total = self._con.execute(
+            "SELECT COUNT(*) FROM sessions WHERE deleted_at IS NULL"
+        ).fetchone()[0]
         critical = self._con.execute(
-            "SELECT COUNT(*) FROM sessions WHERE urgency='critico'"
+            "SELECT COUNT(*) FROM sessions WHERE urgency='critico' "
+            "AND deleted_at IS NULL"
         ).fetchone()[0]
         last = self._con.execute(
-            "SELECT * FROM sessions ORDER BY id DESC LIMIT 1"
+            "SELECT * FROM sessions WHERE deleted_at IS NULL "
+            "ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        rows = self._con.execute("SELECT dtc_codes FROM sessions").fetchall()
+        rows = self._con.execute(
+            "SELECT dtc_codes FROM sessions WHERE deleted_at IS NULL"
+        ).fetchall()
         freq: dict[str, int] = {}
         for row in rows:
             for code in json.loads(row[0] or "[]"):

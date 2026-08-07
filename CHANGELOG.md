@@ -5,6 +5,68 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+
+- **Segurança e validação no `PUT /api/branding`**: todos os 7 campos de
+  branding agora têm sanitização server-side: `strip()`, limite de 160 chars
+  por campo, e `logo_url` só aceita `http://`, `https://` ou
+  `data:image/{png,jpeg,svg+xml};base64,` (até 2000 chars). Qualquer input
+  fora dessas regras vira `""` em vez de ser salvo cru.
+- **Soft-delete + purge de sessões (LGPD/LGPD)**: nova coluna `deleted_at`
+  adicionada via migração incremental (bases antigas continuam funcionando).
+  Novo `History.delete_session(sid, purge=False)` marca deleted_at com
+  timestamp ISO; `purge=True` apaga fisicamente; `restore_session()` desfaz
+  o soft-delete; `purge_deleted_older_than(days=30)` faz limpeza automática.
+  Todos os reads (`list`, `get`, `list_by_vin`, `previous_for_vin`,
+  `list_vehicles`, `summary`) agora ignoram deleted_at automaticamente.
+- **Endpoint `DELETE /api/session/{sid}?purge=true|false`** expõe o
+  soft-delete via API (retorna 404 quando sid não existe).
+- **CORS liberado local-first**: FastAPI agora roda com `CORSMiddleware`
+  `allow_origins=["*"]` e `max_age=3600`, eliminando erros intermitentes de
+  navegador em acessos por IP da LAN ou com extensões injetando código.
+- **QR code no footer do relatório**: `build_report()` agora aceita
+  `download_url` extraído de `request.url_for()` nos endpoints `/report` e
+  `/report/{sid}/download`. O render HTML injeta um card GitHub-Dark-style
+  no final do documento com `<img src="data:image/png;base64,...">` gerado
+  via `qrcode[pil]` (tamanho 96×96 px). Fallback: se o IP real não tiver
+  disponível, usa socket.getaddrinfo + 8.8.8.8 connect pra descobrir IP LAN
+  e cai pra localhost.
+- **Captura live 60s: buffer completo + CSV download**:
+  - Backend: endpoint `/api/scan/live` agora acumula `samples[]` em memória
+    no loop daemon e, ao final, envia evento `done` com
+    `{duration, samples:[{t,pids},...]}`, em vez de só `type:done`.
+  - Frontend: botão 💾 "Baixar CSV" no card-header da captura começa
+    disabled e fica habilitado no evento `done`. CSV tem 12 colunas (t + 11
+    PIDs) codificado UTF-8 BOM + CRLF, nome `autodiag-live-YYYYMMDD-HHMMSS.csv`.
+  - SVG é **rerenderizado** no evento `done` usando os samples[] oficiais,
+    garantindo integridade completa do gráfico mesmo se algum tick se perdeu
+    no render progressivo do EventSource.
+- **pyproject.toml**: nova dependência obrigatória `qrcode[pil]>=8.0`.
+- **Testes de endpoints web (P0.4)**: novo arquivo `tests/test_web.py` com
+  18 cases: 8 em `PATCH /api/session/{sid}` (tags invalidas/limites/trim,
+  notes invalido, 404), 4 em `DELETE /api/session/{sid}` (soft vs purge vs
+  restore vs 404), 6 em `PUT/GET /api/branding` (tamanho 160, XSS
+  `logo_url`, data:image, campos desconhecidos, roundtrip), 2 em
+  `/api/scan/live` (clamp duration negativo -> 1 tick, callable 600 clamp).
+
+### Alterado
+
+- Frontend startLiveCapture trocou query param `wifi=` por `wifi_host=`
+  (match do nome real do parâmetro em `/api/scan/live`).
+- Live SVG rendering extraído pra helper `_renderSeries(history, seconds)`
+  compartilhado entre evento tick e evento done.
+
+### Corrigido
+
+- FastAPI TestClient: testes de live captura agora usam contexto gerenciado
+  `with client.stream(...)` em vez de kwarg `stream=True` (removido em
+  httpx 0.27+).
+- Mypy strict em `tests/test_reader.py` (status.monitors `dict[str, bool] | None`
+  não indexável): introduzidos helpers locais `spark_mon = status.monitors or {}`
+  com asserts `bool(...)`.
+- Ruff UP035: test fixtures que usam `yield from typing.Iterator` migrados
+  para `collections.abc.Iterator`.
+
 ## [0.4.0] — 2026-08-06
 
 ### Adicionado

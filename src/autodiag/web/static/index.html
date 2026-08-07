@@ -195,9 +195,12 @@
 
         <div class="col-12" id="scan-live-card" style="display:none">
           <div class="card">
-            <div class="card-header small text-muted py-2 d-flex justify-content-between">
+            <div class="card-header small text-muted py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
               <span>📊 Captura contínua — <span id="scan-live-counter">0</span>/60s</span>
-              <button class="btn btn-outline-secondary btn-sm py-0" onclick="stopLiveCapture()">Parar</button>
+              <div class="d-flex align-items-center gap-2">
+                <a id="scan-live-download" class="btn btn-outline-success btn-sm py-0 disabled" aria-disabled="true">💾 Baixar CSV</a>
+                <button class="btn btn-outline-secondary btn-sm py-0" onclick="stopLiveCapture()">Parar</button>
+              </div>
             </div>
             <div class="card-body" id="scan-live-body">
               <svg id="scan-live-svg" viewBox="0 0 600 240" preserveAspectRatio="none"
@@ -820,13 +823,55 @@ const LIVE_SERIES = [
   { key: 'maf_g_s',           label: 'MAF',           color: '#7ee787', side: 'R',  min: 0,   max: 25   },
   { key: 'fuel_trim_short_b1',label: 'FT curto B1',   color: '#ff7b72', side: 'R',  min: -25, max: 25   },
 ];
+const ALL_LIVE_KEYS = [
+  't','rpm','speed_kmh','coolant_temp_c','engine_load_pct','throttle_pct','maf_g_s',
+  'fuel_trim_short_b1','fuel_trim_long_b1','o2_b1s1_v','intake_air_temp_c','mileage_km'
+];
+
+function _renderSeries(history, seconds) {
+  LIVE_SERIES.forEach((s, i) => {
+    const data = history[i];
+    const baseX = s.side === 'L' ? 0 : LIVE_W / 2;
+    const spanX = LIVE_W / 2 - 1;
+    const pts = data.map((v, j) => {
+      const x = baseX + (j / Math.max(1, seconds - 1)) * spanX;
+      if (v == null) return null;
+      const norm = (v - s.min) / (s.max - s.min);
+      const y = LIVE_H - 14 - (Math.max(0, Math.min(1, norm)) * (LIVE_H - 26));
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).filter(Boolean).join(' ');
+    document.getElementById(`live-serie-${i}`).setAttribute('points', pts);
+  });
+}
+
+function _csvFromSamples(samples) {
+  const bom = '\uFEFF';
+  const header = ALL_LIVE_KEYS.slice();
+  const lines = [header.join(',')];
+  for (const s of samples || []) {
+    const row = ALL_LIVE_KEYS.map(k => {
+      if (k === 't') return s.t ?? '';
+      const pids = s.pids || {};
+      const v = pids[k];
+      if (v == null) return '';
+      if (typeof v === 'number') return String(v);
+      return `"${String(v).replace(/"/g, '""')}"`;
+    });
+    lines.push(row.join(','));
+  }
+  return bom + lines.join('\r\n') + '\r\n';
+}
 
 function startLiveCapture(seconds = 60) {
   if (liveEs) return;
   const port = document.getElementById('scan-port').value.trim();
   const wifi = document.getElementById('scan-wifi').value.trim();
   const demo = document.getElementById('scan-demo').checked;
-  document.getElementById('scan-live-card').style.display = '';
+  const card = document.getElementById('scan-live-card');
+  card.style.display = '';
+  const dl = document.getElementById('scan-live-download');
+  dl.classList.add('disabled'); dl.setAttribute('aria-disabled', 'true');
+  dl.removeAttribute('download'); dl.removeAttribute('href');
   document.getElementById('scan-live-counter').textContent = '0';
   document.getElementById('scan-live-series').innerHTML = LIVE_SERIES.map((s, i) =>
     `<polyline id="live-serie-${i}" fill="none" stroke="${s.color}" stroke-width="1.4"
@@ -837,7 +882,7 @@ function startLiveCapture(seconds = 60) {
   const history = LIVE_SERIES.map(() => []);
   const params = new URLSearchParams();
   if (port) params.set('port', port);
-  if (wifi) params.set('wifi', wifi);
+  if (wifi) params.set('wifi_host', wifi);
   if (demo) params.set('demo', 'true');
   params.set('duration', String(seconds));
 
@@ -853,23 +898,35 @@ function startLiveCapture(seconds = 60) {
         history[i].push(v);
         if (history[i].length > 180) history[i].shift();
       });
-      LIVE_SERIES.forEach((s, i) => {
-        const data = history[i];
-        const baseX = s.side === 'L' ? 0 : LIVE_W / 2;
-        const spanX = LIVE_W / 2 - 1;
-        const pts = data.map((v, j) => {
-          const x = baseX + (j / Math.max(1, seconds - 1)) * spanX;
-          if (v == null) return null;
-          const norm = (v - s.min) / (s.max - s.min);
-          const y = LIVE_H - 14 - (Math.max(0, Math.min(1, norm)) * (LIVE_H - 26));
-          return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).filter(Boolean).join(' ');
-        document.getElementById(`live-serie-${i}`).setAttribute('points', pts);
-      });
+      _renderSeries(history, seconds);
     } else if (ev.type === 'error') {
       logLine('live: ' + ev.message, 'log-err');
       stopLiveCapture();
     } else if (ev.type === 'done') {
+      const samples = ev.samples || [];
+      const total = samples.length;
+      const rebuilt = LIVE_SERIES.map(() => []);
+      for (let i = 0; i < LIVE_SERIES.length; i++) {
+        const s = LIVE_SERIES[i];
+        for (const sample of samples) {
+          const raw = (sample.pids || {})[s.key];
+          const v = (typeof raw === 'number' && Number.isFinite(raw)) ? raw : null;
+          rebuilt[i].push(v);
+        }
+      }
+      _renderSeries(rebuilt, Math.max(1, total));
+      try {
+        const csv = _csvFromSamples(samples);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8-sig' });
+        const url = URL.createObjectURL(blob);
+        const now = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+        dl.setAttribute('href', url);
+        dl.setAttribute('download', `autodiag-live-${now}.csv`);
+        dl.classList.remove('disabled'); dl.removeAttribute('aria-disabled');
+        logLine(`live: captura encerrada com ${total} amostras. CSV pronto.`, 'log-ok');
+      } catch (err) {
+        logLine(`live: ${total} amostras capturadas (erro ao montar CSV).`, 'log-err');
+      }
       stopLiveCapture();
     }
   };

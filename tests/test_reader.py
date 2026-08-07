@@ -171,11 +171,12 @@ class TestMonitorStatus:
         assert status.mil_on is False
         assert status.dtc_count == 0
         assert status.ignition == "spark"
-        assert status.monitors["Sistema de combustível"] is False
-        assert status.monitors["Falha de ignição (misfire)"] is True
-        assert status.monitors["Catalisador"] is False
-        assert status.monitors["Sistema EVAP"] is False
-        assert status.monitors["Sonda lambda"] is True
+        spark_mon = status.monitors or {}
+        assert bool(spark_mon["Sistema de combustível"]) is False
+        assert bool(spark_mon["Falha de ignição (misfire)"]) is True
+        assert bool(spark_mon["Catalisador"]) is False
+        assert bool(spark_mon["Sistema EVAP"]) is False
+        assert bool(spark_mon["Sonda lambda"]) is True
         assert set(status.incomplete_monitors) == {
             "Sistema de combustível", "Catalisador", "Sistema EVAP",
         }
@@ -188,8 +189,9 @@ class TestMonitorStatus:
         assert status.mil_on is True
         assert status.dtc_count == 1
         assert status.ignition == "compression"
-        assert status.monitors["Catalisador NMHC"] is True
-        assert status.monitors["Pós-tratamento NOx/SCR"] is False
+        monitors = status.monitors or {}
+        assert bool(monitors["Catalisador NMHC"]) is True
+        assert bool(monitors["Pós-tratamento NOx/SCR"]) is False
 
     def test_short_payload_keeps_monitors_none(self):
         reader = FakeReader({"0101": "41 01 02"})

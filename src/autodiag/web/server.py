@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 load_dotenv(Path.home() / ".autodiag" / ".env")
 load_dotenv(".env")
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -30,6 +31,14 @@ from autodiag.elm327 import OBDReader, create_reader
 from autodiag.elm327.reader import DTCRecord, list_ports
 
 app = FastAPI(title="AutoDiag")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    max_age=3600,
+)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
@@ -89,11 +98,23 @@ async def api_patch_session(
     for k, _t in allowed.items():
         if k in body:
             v = body.get(k)
-            if k == "tags" and not isinstance(v, list):
-                raise HTTPException(status_code=400, detail="tags deve ser lista")
-            if k == "notes" and not isinstance(v, str):
-                raise HTTPException(status_code=400, detail="notes deve ser string")
-            patch[k] = v
+            if k == "tags":
+                if not isinstance(v, list):
+                    raise HTTPException(status_code=400, detail="tags deve ser lista")
+                if not all(isinstance(t, str) for t in v):
+                    raise HTTPException(status_code=400, detail="tags deve ser lista de strings")
+                if len(v) > 16:
+                    raise HTTPException(status_code=400, detail="maximo 16 tags")
+                cleaned_tags: list[str] = []
+                for t in v:
+                    t_clean = t.strip()[:80]
+                    if t_clean:
+                        cleaned_tags.append(t_clean)
+                patch["tags"] = cleaned_tags
+            if k == "notes":
+                if not isinstance(v, str):
+                    raise HTTPException(status_code=400, detail="notes deve ser string")
+                patch["notes"] = v.strip()[:4000]
     with History() as history:
         if not patch:
             row = history.get(sid)
@@ -104,6 +125,18 @@ async def api_patch_session(
     if updated is None:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
     return updated
+
+
+@app.delete("/api/session/{sid}")
+async def api_delete_session(
+    sid: int,
+    purge: bool = Query(default=False, description="Remove permanentemente em vez de soft-delete"),
+):
+    with History() as history:
+        ok = history.delete_session(sid, purge=purge)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    return {"deleted": True, "purged": purge, "id": sid}
 
 
 @app.get("/api/branding")
@@ -181,26 +214,28 @@ async def api_vehicle_export_csv(vin: str, limit: int = Query(500, ge=1, le=5000
 
 
 @app.get("/report/{sid}", response_class=HTMLResponse)
-async def report(sid: int):
+async def report(sid: int, request: Request):
     with History() as history:
         row = history.get(sid)
         if not row:
             return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
         prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
         vhist = history.list_by_vin(row.get("vin") or "", limit=8)
-    rep = build_report(row, prev, vehicle_history=vhist)
+    url = str(request.url_for("report_download", sid=sid))
+    rep = build_report(row, prev, vehicle_history=vhist, download_url=url)
     return render_report_html(rep)
 
 
 @app.get("/report/{sid}/download", response_class=HTMLResponse)
-async def report_download(sid: int):
+async def report_download(sid: int, request: Request):
     with History() as history:
         row = history.get(sid)
         if not row:
             return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
         prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
         vhist = history.list_by_vin(row.get("vin") or "", limit=8)
-    rep = build_report(row, prev, vehicle_history=vhist)
+    url = str(request.url_for("report_download", sid=sid))
+    rep = build_report(row, prev, vehicle_history=vhist, download_url=url)
     html = render_report_html(rep)
     return HTMLResponse(
         html,
@@ -423,9 +458,10 @@ async def scan_live(
     reader: OBDReader = create_reader(port=port, wifi_host=wifi_host, demo=demo)
     loop = asyncio.get_event_loop()
     stop_flag = threading.Event()
-    q: asyncio.Queue[dict | None] = asyncio.Queue()
+    q: asyncio.Queue[dict | list | None] = asyncio.Queue()
 
     def run() -> None:
+        samples: list[dict] = []
         try:
             connected = reader.connect()
             if not connected:
@@ -441,6 +477,7 @@ async def scan_live(
                     pids = reader.get_live_pids().as_dict()
                 except Exception:
                     pids = {}
+                samples.append({"t": i + 1, "pids": pids})
                 loop.call_soon_threadsafe(
                     q.put_nowait, {"type": "tick", "t": i + 1, "pids": pids}
                 )
@@ -450,15 +487,23 @@ async def scan_live(
                 reader.disconnect()
             except Exception:
                 pass
-            loop.call_soon_threadsafe(q.put_nowait, None)
+            loop.call_soon_threadsafe(q.put_nowait, samples)
 
     threading.Thread(target=run, daemon=True).start()
 
     async def generate():
         while True:
             event = await q.get()
+            if isinstance(event, list):
+                payload = {
+                    "type": "done",
+                    "duration": duration,
+                    "samples": event,
+                }
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                break
             if event is None:
-                yield 'data: {"type":"done"}\n\n'
+                yield 'data: {"type":"done","samples":[]}\n\n'
                 break
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 

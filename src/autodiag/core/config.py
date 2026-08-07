@@ -90,10 +90,45 @@ def get_branding() -> Branding:
     return load_config().branding
 
 
+_MAX_FIELD_LEN = 160
+
+
+def _is_safe_logo_url(value: str) -> bool:
+    v = value.strip()
+    if not v:
+        return True
+    safe_prefixes = (
+        "http://",
+        "https://",
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/svg+xml;base64,",
+    )
+    if v.startswith(safe_prefixes):
+        return len(v) <= 2000
+    return False
+
+
+def _clean_branding_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    fields = Branding.__dataclass_fields__
+    for k, v in (patch or {}).items():
+        if k not in fields or not isinstance(v, str):
+            continue
+        cleaned = v.strip()
+        if len(cleaned) > _MAX_FIELD_LEN:
+            cleaned = cleaned[:_MAX_FIELD_LEN]
+        if k == "logo_url":
+            if not _is_safe_logo_url(cleaned):
+                cleaned = ""
+        out[k] = cleaned
+    return out
+
+
 def update_branding(patch: dict[str, Any]) -> Branding:
     cfg = load_config()
-    for k, v in (patch or {}).items():
-        if hasattr(cfg.branding, k) and isinstance(v, str):
-            setattr(cfg.branding, k, v)
+    cleaned = _clean_branding_patch(patch)
+    for k, v in cleaned.items():
+        setattr(cfg.branding, k, v)
     save_config(cfg)
     return cfg.branding
