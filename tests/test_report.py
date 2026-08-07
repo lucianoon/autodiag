@@ -113,3 +113,27 @@ def test_freeze_frame_renders_in_html(history):
     assert "P0171" in html
     assert "1720" in html
 
+
+def test_cost_block_appears_with_dtcs_and_estimated_values(history):
+    sid = history.save(_session(dtc_codes=["P0301", "P0171", "P0420"]))
+    row = history.get(sid)
+    rep = build_report(row, None)
+    html = render_report_html(rep)
+    assert "Orçamento estimado" in html
+    assert "Faixa total:" in html
+    # Deve conter pelo menos 3 códigos na tabela de detalhe
+    for dtc in ("P0301", "P0171", "P0420"):
+        assert dtc in html
+    # Aviso legal sobre valores estimados Sudeste BR aparece no rodapé
+    assert "Sudeste do Brasil" in html
+
+
+def test_cost_block_shows_zero_when_no_dtcs(history):
+    sid = history.save(_session(dtc_codes=[], cost_min=0, cost_max=0))
+    row = history.get(sid)
+    rep = build_report(row, None)
+    html = render_report_html(rep)
+    assert "Orçamento estimado" in html
+    assert "Não há falhas identificadas" in html
+    assert "R$ 0,00" in html
+

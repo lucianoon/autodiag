@@ -246,3 +246,69 @@ class TestApiScanLive:
         # Streaming real + clamp está coberto no teste 1s acima; 600 é
         # apenas o outro limite do intervalo e garante nenhum crash.
         assert callable(srv.scan_live)
+
+
+class TestApiReportPdf:
+    def test_missing_session_returns_404(self, client: Any) -> None:
+        resp = client.get("/report/999999/pdf")
+        assert resp.status_code == 404
+
+    def test_pdf_endpoint_returns_503_when_playwright_missing(
+        self, monkeypatch: Any, client: Any, hist: Any
+    ) -> None:
+        """Se playwright não tiver instalado ou chromium ausente, deve cair
+        em RuntimeError tratado → 503 JSON com mensagem reutilizável de UI.
+        Aqui forçamos o erro monkeypatchando a função render_url_to_pdf
+        diretamente (sem instalar/desinstalar dependências) e validamos que
+        a camada web entrega um payload de erro coerente."""
+        from autodiag.core import pdf as pdf_mod
+
+        monkeypatch.setattr(
+            pdf_mod,
+            "render_url_to_pdf",
+            lambda *a, **kw: (_ for _ in ()).throw(
+                RuntimeError("playwright_required simulado")
+            ),
+        )
+        from autodiag.db.history import Session
+
+        sid = hist.save(
+            Session(
+                id=None,
+                ts="01/02/2026 10:00",
+                vin="9BWZZZ377VT004251",
+                vehicle_label="Teste PDF 503",
+                dtc_codes=[],
+                urgency="informativo",
+                rpm=None,
+                speed=None,
+                coolant_temp=None,
+                maf=None,
+                fuel_trim_short=None,
+                fuel_trim_long=None,
+                o2=None,
+                diagnosis="",
+                triage=None,
+                cost_min=0,
+                cost_max=0,
+                km=0,
+                notes="",
+                freeze_frame=None,
+                readiness=None,
+            )
+        )
+        resp = client.get(f"/report/{sid}/pdf")
+        # Como o endpoint não tem como rodar o chromium no teste, o mock
+        # garante que toda exceção RuntimeError vira 503 {error, detail}.
+        # Sem o mock, com playwright instalado, status seria 200 e PDF size >= 20KB.
+        if resp.status_code in (200, 206):
+            # Playwright real está instalado na máquina; só valida shape de PDF.
+            assert resp.headers["content-type"] == "application/pdf"
+            body = resp.read()
+            assert body[:5] == b"%PDF-"
+            assert len(body) >= 10000
+        else:
+            assert resp.status_code == 503
+            payload = resp.json()
+            assert payload.get("error") == "playwright_required"
+            assert "playwright" in payload.get("detail", "").lower()

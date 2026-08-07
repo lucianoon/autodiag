@@ -2,6 +2,8 @@ import asyncio
 import csv
 import io
 import json
+import os
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -21,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from autodiag.core.config import Branding, get_branding, update_branding
 from autodiag.core.diagnosis import infer_urgency
 from autodiag.core.dtc import full_database, lookup
+from autodiag.core.pdf import render_url_to_pdf
 from autodiag.core.readiness import build_readiness_summary
 from autodiag.core.report import build_report, render_report_html
 from autodiag.core.trend import build_vehicle_trends
@@ -241,6 +244,71 @@ async def report_download(sid: int, request: Request):
         html,
         headers={
             "Content-Disposition": f'attachment; filename="autodiag-report-{sid}.html"'
+        },
+    )
+
+
+@app.get("/report/{sid}/pdf")
+async def report_pdf(sid: int, request: Request):
+    with History() as history:
+        row = history.get(sid)
+    if not row:
+        return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
+    vin_token = (
+        (row.get("vin") or "").strip()[-6:]
+        if (row.get("vin") or "").strip()
+        else "veiculo"
+    )
+    ts_token = datetime.now().strftime("%Y%m%d-%H%M")
+    filename = f"autodiag-report-{vin_token}-{ts_token}.pdf"
+    report_url = str(request.url_for("report", sid=sid))
+    pdf_path: Path | None = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=".pdf", prefix="autodiag-pdf-")
+        os.close(fd)
+        pdf_path = Path(tmp_path)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, render_url_to_pdf, report_url, pdf_path)
+    except RuntimeError as e:
+        if pdf_path is not None and pdf_path.exists():
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
+        return JSONResponse(
+            {"error": "playwright_required", "detail": str(e)}, status_code=503
+        )
+    except Exception as e:
+        if pdf_path is not None and pdf_path.exists():
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=500, detail=f"Falha ao gerar PDF: {e}"
+        ) from e
+
+    def iter_cleanup() -> Any:
+        fh = open(pdf_path, "rb")
+        try:
+            while True:
+                chunk = fh.read(1024 * 256)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            fh.close()
+            try:
+                pdf_path.unlink()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        iter_cleanup(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
         },
     )
 

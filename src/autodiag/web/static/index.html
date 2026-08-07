@@ -674,6 +674,7 @@ async function loadDash() {
             : ''}
           <div class="mb-3 d-flex flex-wrap gap-2">
             <a class="btn btn-outline-secondary btn-sm" href="/report/${esc(last.id)}" target="_blank">Abrir relatório</a>
+            <a class="btn btn-outline-secondary btn-sm ms-2" href="/report/${esc(last.id)}/pdf">📄 PDF</a>
             <a class="btn btn-outline-secondary btn-sm ms-2" href="/report/${esc(last.id)}/download">Baixar HTML</a>
             <button class="btn btn-outline-primary btn-sm" onclick="openNotesModal(${last.id})">✎ Notas / Tags</button>
           </div>
@@ -969,6 +970,7 @@ async function loadHistory() {
       <td class="text-end">
         <button class="btn btn-outline-primary btn-sm" onclick="openNotesModal(${esc(s.id)})">✎</button>
         <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}" target="_blank">Relatório</a>
+        <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}/pdf">📄</a>
         <a class="btn btn-outline-secondary btn-sm ms-1" href="/report/${esc(s.id)}/download">Baixar</a>
       </td>
     </tr>`;

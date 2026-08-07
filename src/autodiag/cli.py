@@ -29,6 +29,7 @@ load_dotenv(Path.home() / ".autodiag" / ".env")
 load_dotenv(".env")
 
 from autodiag import ui
+from autodiag.core.cost_estimates import estimate_session_costs
 from autodiag.core.diagnosis import infer_urgency
 from autodiag.core.readiness import build_readiness_summary
 from autodiag.core.report import build_report, render_report_html
@@ -120,6 +121,10 @@ async def cmd_scan(args):
         triage = build_guided_triage(all_dtcs, pids, urgency)
         ui.display.triage_panel(triage, urgency)
 
+        codes_for_cost = [d.code for d in all_dtcs]
+        cost_min, cost_max, cost_items = estimate_session_costs(codes_for_cost)
+        ui.display.cost_panel(cost_min, cost_max, cost_items)
+
         diagnosis_text = ""
         if not getattr(args, "no_ai", False):
             from autodiag.agents.diagnostic import (
@@ -166,8 +171,8 @@ async def cmd_scan(args):
             o2=pids.o2_b1s1_v,
             diagnosis=diagnosis_text,
             triage=triage,
-            cost_min=0,
-            cost_max=0,
+            cost_min=cost_min,
+            cost_max=cost_max,
             km=km,
             notes=notes,
             freeze_frame=freeze_frame,

@@ -7,6 +7,58 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- **Orçamento automático estimado por família DTC**: novo módulo
+  [core/cost_estimates.py](src/autodiag/core/cost_estimates.py) com tabela
+  de faixas em **centavos de Real** (`min_cents, max_cents`) por família
+  de DTC (P00..P09, B0/B1, C0/C1, U0/U1) + multiplicadores por severidade
+  (`critico` ×1.15/1.25, `atencao` ×1.0/1.05, `informativo` ×0.9/0.85).
+  Funções `estimate_dtc_cost()`, `estimate_session_costs(lista)` e
+  `format_brl(cents)` (formato BR `R$ 1.234,56`).
+- **CLI: Painel de custos logo após o triage**: após cada scan, `autodiag scan`
+  mostra `[cyan]Orçamento estimado[/]` rich-panel com: header "Faixa estimada" +
+  tabela por DTC (código, descrição 120 chars, severidade colorida, faixa por item) +
+  aviso legal regional Sudeste BR.
+- **CLI: Persistência de orçamento no banco**: `Session.cost_min` / `cost_max`
+  deixaram de ser `0` hardcoded no `cmd_scan` e agora recebem valores
+  retornados por `estimate_session_costs()` antes do `History.save()`.
+- **Relatório: Card 🛠️ Orçamento estimado**: inserido após Freeze+Readiness e
+  antes de Análise IA**: mostra "Faixa total" em destaque azul, tabela 4 colunas
+  (Código, Descrição, Badge Severidade, Faixa), aviso legal
+  Sudeste-BR.
+  **Retrocompatível: sessões antigas com cost_min/max salvos como 0 são recalculados
+  on-the-fly a partir de `dtc_codes` antes do `s.get("dtc_codes")`. Caso
+  limpo (sem DTCs) mostra o texto verde "Não há falhas identificadas — custo R$ 0,00`.
+- **Exportação PDF do relatório (A4):
+  - Dependência obrigatória `playwright>=1.45.0` no `pyproject.toml`.
+  - Módulo novo [core/pdf.py](src/autodiag/core/pdf.py) com `render_url_to_pdf(url, output_path)`
+    que: detecta ausência do `playwright`/Chromium levanta `RuntimeError`
+    instruções, roda `sync_playwright()` headless, A4
+    viewport 794×1123 (`networkidle`, margens 10/12mm, `print_background=True`
+    para preservar CSS GitHub-Dark, remove antes de o PDF.
+  - Endpoint novo **`GET /report/{sid}/pdf`**: faz o Chromium abrir o próprio
+    `/report/{sid}` real (com `request.url_for("report")` com autenticação real do
+    request corrente, gera PDF em `tempfile` temporário, retorna `StreamingResponse`
+    `application/pdf` nome `autodiag-report-<vin6dig>-<ts>.pdf`;
+    `playwright` indisponível cai em 503 JSON `{"error": "playwright_required", "detail": "..."}`.
+  - UI 4️⃣ locais de botão 📄 PDF:
+    (1) navbar do próprio relatório HTML (entre "Baixar HTML" e Imprimir);
+    (2) card "Último scan" dashboard (Abrir relatório / 📄 PDF / Baixar HTML / ✎);
+    (3) linha da tabela de histórico (✎/Relatório/📄/Baixar);
+    (4) (opcional) link download direto `.pdf`.
+- **Testes novos**: 19 casos a mais (+19 net):
+  `tests/test_cost_estimates.py` 16 casos unitários `format_brl` (zero, cem reais,
+  1.234, 10k); `estimate_dtc_cost` desconhecido → default; P0171 tem descrição;
+  P0300 misfire é `critico`; B0001 airbag tem mín 30k; P0731 transmissão crítica
+  mín 60k); `estimate_session_costs` (vazia; 1 code min>0; dup collapsa duplicados
+  (P0171+P0171→2 itens; total soma matches individual; P0171+B0001+U0100 3 códigos
+  faixas coerentes; códigos inválidos → ignorados).
+  `test_report.py`: 2 novos `cost_block_appears_with_dtcs_and_estimated_values` 3 DTCs
+  + "Sudeste do Brasil" aviso legal `cost_block_shows_zero_when_no_dtcs` texto
+  verde "R$ 0,00 sem falhas".
+  test_web.py`: TestApiReportPdf 2 casos: missing session sid inexistente → 404; runtime
+  monkeypatch `render_url_to_pdf` lançar RuntimeError retorna 503 payload
+  `playwright_required` mensagem coerente; se instalar rodar real valida magic
+  `%PDF-` header 10KB mín size.
 - **Segurança e validação no `PUT /api/branding`**: todos os 7 campos de
   branding agora têm sanitização server-side: `strip()`, limite de 160 chars
   por campo, e `logo_url` só aceita `http://`, `https://` ou
@@ -41,13 +93,12 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   - SVG é **rerenderizado** no evento `done` usando os samples[] oficiais,
     garantindo integridade completa do gráfico mesmo se algum tick se perdeu
     no render progressivo do EventSource.
-- **pyproject.toml**: nova dependência obrigatória `qrcode[pil]>=8.0`.
-- **Testes de endpoints web (P0.4)**: novo arquivo `tests/test_web.py` com
-  18 cases: 8 em `PATCH /api/session/{sid}` (tags invalidas/limites/trim,
-  notes invalido, 404), 4 em `DELETE /api/session/{sid}` (soft vs purge vs
-  restore vs 404), 6 em `PUT/GET /api/branding` (tamanho 160, XSS
-  `logo_url`, data:image, campos desconhecidos, roundtrip), 2 em
-  `/api/scan/live` (clamp duration negativo -> 1 tick, callable 600 clamp).
+- **pyproject.toml**: novas dependências obrigatórias `qrcode[pil]>=8.0` e
+  `playwright>=1.45.0`.
+- **Testes de endpoints web (P0.4)**: arquivo `tests/test_web.py` com
+  20 cases: 8 em `PATCH /api/session/{sid}`, 4 em `DELETE /api/session/{sid}`,
+  6 em `PUT/GET /api/branding`, 2 em `/api/scan/live`, 2 em
+  `GET /report/{sid}/pdf` (404 + 503 playwright_required).
 
 ### Alterado
 
@@ -55,6 +106,8 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   (match do nome real do parâmetro em `/api/scan/live`).
 - Live SVG rendering extraído pra helper `_renderSeries(history, seconds)`
   compartilhado entre evento tick e evento done.
+- CLI cmd_scan: `Session(cost_min, cost_max)` agora vem de
+  `estimate_session_costs()` em vez de `0, 0` hardcoded.
 
 ### Corrigido
 
@@ -66,6 +119,8 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   com asserts `bool(...)`.
 - Ruff UP035: test fixtures que usam `yield from typing.Iterator` migrados
   para `collections.abc.Iterator`.
+- Ruff B904: raise HTTPException 500 no endpoint PDF agora tem
+  `raise ... from e` (preserva cadeia de exceptions).
 
 ## [0.4.0] — 2026-08-06
 

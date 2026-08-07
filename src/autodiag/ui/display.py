@@ -5,6 +5,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from autodiag.core.cost_estimates import format_brl
 from autodiag.core.dtc import lookup, severity_color
 from autodiag.core.vehicle import VehicleProfile
 from autodiag.elm327.reader import DTCRecord, LivePIDs, MonitorStatus
@@ -174,6 +175,60 @@ def triage_panel(triage: dict, urgency: str = "informativo"):
             items.append(section)
 
     console.print(Panel(Group(*items), title="Triagem guiada", border_style=color))
+
+
+def cost_panel(
+    min_cents: int,
+    max_cents: int,
+    items: list[dict] | None = None,
+) -> None:
+    if (min_cents or 0) == 0 and (max_cents or 0) == 0 and not items:
+        return
+    items = items or []
+    table = Table(box=box.SIMPLE, show_header=True, collapse_padding=True)
+    table.add_column("Código", style="bold cyan")
+    table.add_column("Descrição", no_wrap=False)
+    table.add_column("Severidade", width=12)
+    table.add_column("Faixa estimada", justify="right")
+    sev_colors = {"critico": "red", "atencao": "yellow", "informativo": "green"}
+    for it in items:
+        code = str(it.get("code") or "—")
+        desc = str(it.get("description") or "—")
+        sev = str(it.get("severity") or "informativo")
+        sev_color = sev_colors.get(sev, "white")
+        mn = int(it.get("min_cents") or 0)
+        mx = int(it.get("max_cents") or 0)
+        faixa = (
+            f"{format_brl(mn)} a {format_brl(mx)}"
+            if mn and mx
+            else format_brl(max(mn, mx))
+        )
+        table.add_row(
+            escape(code),
+            escape(desc[:120] + ("…" if len(desc) > 120 else "")),
+            f"[{sev_color}]{escape(sev)}[/]",
+            escape(faixa),
+        )
+    header_lines = [
+        (
+            f"[bold]Faixa estimada:[/] {escape(format_brl(min_cents))}  "
+            f"[dim]—[/]  {escape(format_brl(max_cents))}"
+        )
+    ]
+    header_lines.append(
+        "[dim]*Estimativa regional Sudeste BR. Pode variar por peça "
+        "original/paralela,[/]"
+    )
+    header_lines.append(
+        "[dim]modelo/ano, complexidade e política da oficina. "
+        "Mão de obra diagnóstico não inclusa.[/]"
+    )
+    g_items: list = [Text.from_markup("\n".join(header_lines))]
+    if items:
+        g_items.append(table)
+    console.print(
+        Panel(Group(*g_items), title="Orçamento estimado", border_style="cyan")
+    )
 
 
 def freeze_frame_panel(ff: dict):

@@ -7,6 +7,7 @@ import socket
 from dataclasses import dataclass
 
 from autodiag.core.config import Branding, get_branding
+from autodiag.core.cost_estimates import estimate_session_costs, format_brl
 from autodiag.core.dtc import lookup
 from autodiag.core.inspection import build_inspection_verdict
 
@@ -414,6 +415,91 @@ def render_report_html(report: Report) -> str:
             "</div></div>"
         )
 
+    def cost_block() -> str:
+        saved_min = int(s.get("cost_min") or 0)
+        saved_max = int(s.get("cost_max") or 0)
+        dtcs_list: list[str] = [str(c) for c in (s.get("dtc_codes") or []) if c]
+        if saved_min <= 0 and saved_max <= 0 and dtcs_list:
+            total_min, total_max, items = estimate_session_costs(dtcs_list)
+        else:
+            total_min, total_max = saved_min, saved_max
+            items = []
+            for code in dtcs_list:
+                info = lookup(code)
+                _, _ = estimate_session_costs([code])[:2]
+                per_min, per_max, _ = estimate_session_costs([code])
+                desc = info.description if info else ""
+                sev = info.severity if info else "informativo"
+                items.append(
+                    {
+                        "code": code,
+                        "description": desc,
+                        "min_cents": per_min,
+                        "max_cents": per_max,
+                        "severity": sev,
+                    }
+                )
+        if total_min <= 0 and total_max <= 0 and not dtcs_list:
+            return (
+                "<div class='col-12'><div class='card'><div class='card-header "
+                "small text-muted py-2'>🛠️  Orçamento estimado</div>"
+                "<div class='card-body'><p class='mb-0 text-success'><strong>"
+                "Não há falhas identificadas</strong> — custo de reparo "
+                "estimado R$ 0,00.</p></div></div></div>"
+            )
+        detail_rows: list[str] = []
+        sev_cls_cost = {
+            "critico": "danger",
+            "atencao": "warning",
+            "informativo": "success",
+        }
+        for it in items:
+            code = str(it.get("code") or "—")
+            desc = str(it.get("description") or "—")
+            sev = str(it.get("severity") or "informativo")
+            badge_cls = sev_cls_cost.get(sev, "secondary")
+            mn = int(it.get("min_cents") or 0)
+            mx = int(it.get("max_cents") or 0)
+            faixa = (
+                f"{format_brl(mn)} a {format_brl(mx)}"
+                if mn and mx
+                else format_brl(max(mn, mx))
+            )
+            detail_rows.append(
+                "<tr>"
+                f"<td><code>{esc(code)}</code></td>"
+                f"<td>{esc(desc)}</td>"
+                f"<td><span class='badge bg-{badge_cls}'>{esc(sev)}</span></td>"
+                f"<td class='text-end'>{esc(faixa)}</td>"
+                "</tr>"
+            )
+        table_html = ""
+        if detail_rows:
+            table_html = (
+                "<table class='table table-sm table-hover mb-0 mt-3'>"
+                "<thead><tr><th>Código</th><th>Descrição</th>"
+                "<th>Severidade</th><th class='text-end'>Faixa estimada</th></tr></thead>"
+                f"<tbody>{''.join(detail_rows)}</tbody></table>"
+            )
+        faixa_total = (
+            f"{format_brl(total_min)} a {format_brl(total_max)}"
+            if total_min and total_max
+            else format_brl(max(total_min, total_max))
+        )
+        return (
+            "<div class='col-12'><div class='card'>"
+            "<div class='card-header small text-muted py-2'>🛠️  Orçamento estimado</div>"
+            "<div class='card-body'>"
+            f"<div class='mb-2 fs-5'>Faixa total: <strong style='color:#58a6ff;'>"
+            f"{esc(faixa_total)}</strong></div>"
+            f"{table_html}"
+            "<p class='mb-0 mt-2 small text-muted'>*Valores estimados para região "
+            "Sudeste do Brasil. Podem variar conforme modelo/ano do veículo, peça "
+            "original ou paralela, complexidade de instalação e política de preços "
+            "da oficina. Não inclui mão de obra de diagnóstico prévio.</p>"
+            "</div></div></div>"
+        )
+
     def freeze_frame_block() -> str:
         ff = s.get("freeze_frame") or {}
         if not isinstance(ff, dict) or not any(k != "raw" for k in ff):
@@ -664,6 +750,7 @@ def render_report_html(report: Report) -> str:
     </div>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="/report/{esc(sid)}/download">Baixar HTML</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/report/{esc(sid)}/pdf">📄 PDF</a>
       <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">Imprimir</button>
     </div>
   </nav>
@@ -705,6 +792,7 @@ def render_report_html(report: Report) -> str:
 
       {freeze_frame_block()}
       {readiness_block()}
+      {cost_block()}
 
       <div class="col-12">
         <div class="card">
