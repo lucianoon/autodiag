@@ -366,26 +366,26 @@ class TestApiHealthPingContextPersona:
         r1 = client.get("/api/persona")
         assert r1.status_code == 200
         g = r1.json()
-        assert isinstance(g["personas"], list) and len(g["personas"]) == 4
+        assert isinstance(g["personas"], list) and len(g["personas"]) >= 5
         ids = [p["id"] for p in g["personas"]]
-        for required in ("mechanic", "shop_boss", "inspector", "fleet"):
+        for required in ("mechanic", "shop_boss", "inspector", "fleet", "ev_specialist"):
             assert required in ids
-        assert g["active_id"] in ("mechanic", "shop_boss", "inspector", "fleet")
+        assert g["active_id"] in ("mechanic", "shop_boss", "inspector", "fleet", "ev_specialist")
         assert "active_meta" in g and g["active_meta"]["label"]
 
-        # 2) PUT fleet → valida ativo mudou
-        r2 = client.put("/api/persona", json={"id": "fleet", "mark_selected": True})
+        # 2) PUT ev_specialist → valida ativo mudou + selo EV
+        r2 = client.put("/api/persona", json={"id": "ev_specialist", "mark_selected": True})
         assert r2.status_code == 200
         d2 = r2.json()
         assert d2["ok"] is True
-        assert d2["active_id"] == "fleet"
-        assert d2["active_meta"]["label"] == "Gestor(a) de Frota"
+        assert d2["active_id"] == "ev_specialist"
+        assert "Eletricista" in d2["active_meta"]["label"] or "EV" in d2["active_meta"]["label"]
         assert d2["selected"] is True
 
         # 3) GET → reflita o PUT
         r3 = client.get("/api/persona")
         assert r3.status_code == 200
-        assert r3.json()["active_id"] == "fleet"
+        assert r3.json()["active_id"] == "ev_specialist"
         assert r3.json()["selected"] is True
 
         # 4) PUT valor inválido → fallback para default mechanic, sem crash
@@ -405,6 +405,37 @@ class TestApiHealthPingContextPersona:
             "address", "logo_url", "notes_header",
         }
         p = data["persona"]
-        assert len(p["personas"]) == 4
-        assert p["active_id"] in {"mechanic", "shop_boss", "inspector", "fleet"}
+        assert len(p["personas"]) >= 5
+        assert p["active_id"] in {
+            "mechanic", "shop_boss", "inspector", "fleet", "ev_specialist",
+        }
         assert isinstance(p["selected"], bool)
+
+
+class TestApiEvInfo:
+    def test_vin_bev_byd_retorna_eletrico(self, client: Any) -> None:
+        r = client.get("/api/ev-info?vin=LGXCE4CG8N0123456")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["is_ev_any"] is True
+        assert d["marca"] == "BYD"
+        assert isinstance(d["level_label"], str) and len(d["level_label"]) > 0
+        assert isinstance(d["fields_hv"], list) and len(d["fields_hv"]) >= 4
+        # Cada campo HV tem id,name,unit
+        for f in d["fields_hv"]:
+            assert "id" in f and "name" in f and "unit" in f
+
+    def test_vin_none_retorna_default_not_tested(self, client: Any) -> None:
+        r = client.get("/api/ev-info")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["vin"] == ""
+        assert d["is_ev_any"] is False
+        # VIN ausente = "none" (não tentamos nada); WMI desconhecido = "not_tested"
+        assert d["ev_support_level"] == "none"
+
+    def test_vin_combustao_wvw_nao_e_ev(self, client: Any) -> None:
+        r = client.get("/api/ev-info?vin=WVWZZZ6MZDW000123")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["is_ev_any"] is False

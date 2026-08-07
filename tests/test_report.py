@@ -169,3 +169,44 @@ def test_cost_block_shows_zero_when_no_dtcs(history):
     assert "Não há falhas identificadas" in html
     assert "R$ 0,00" in html
 
+
+def test_hv_block_exists_if_bev_vin(history):
+    sid = history.save(_session(vin="LGXCE4CG8N0123456", dtc_codes=[]))
+    row = history.get(sid)
+    rep = build_report(row, None)
+    html = render_report_html(rep)
+    # Card aparece (BYD é BEV → is_ev_any == True)
+    assert "Alta Tensão" in html or "Bateria HV" in html
+    assert "BYD" in html
+    # Selos parciais devem aparecer (sem hv_data → PARCIAL)
+    assert "PARCIAL" in html or "SoC" in html
+
+
+def test_hv_block_not_appear_for_ice_vin(history):
+    sid = history.save(_session(vin="WVWZZZ6MZDW000123", dtc_codes=[]))
+    row = history.get(sid)
+    rep = build_report(row, None)
+    html = render_report_html(rep)
+    # VW ICE não renderiza card
+    assert "Alta Tensão" not in html
+    assert "Bateria HV" not in html
+
+
+def test_hv_block_shows_real_values_when_hv_data_present(history):
+    # Renault-Brasil 9BM Kwid E-Tech: DIDs HV 0x0401 (SOC), 0x0402 (Tensão Pack)
+    hv_data = {
+        "did_0401": 52.3,
+        "did_0402": 400.7,
+    }
+    sess = _session(vin="9BMBE2E10RC123456", dtc_codes=[], hv_data=hv_data)
+    sid = history.save(sess)
+    row = history.get(sid)
+    rep = build_report(row, None)
+    html = render_report_html(rep)
+    # Card ⚡ aparece com valores formatados BR (vírgula como separador decimal)
+    assert "Renault" in html
+    # 400.7 → "400,70" formatado BR
+    assert "400,70" in html
+    assert "52,30" in html
+
+

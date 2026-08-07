@@ -1327,10 +1327,11 @@ let APP_CONTEXT = {
   branding: {workshop_name:'', mechanic_name:'', phone:'', email:'', address:'', logo_url:'', notes_header:''},
   persona: {
     personas: [
-      {id:'mechanic',   label:'Mecânico',             emoji:'🔧', tagline:'Diagnóstico no veículo, rápido e preciso',              default_home_tab:'scan'},
-      {id:'shop_boss',  label:'Dono(a) de Oficina',   emoji:'🏪', tagline:'Painel de controle da oficina: faturamento, KPIs, tendências', default_home_tab:'dashboard'},
-      {id:'inspector',  label:'Vistoriador Seminovos',emoji:'🔍', tagline:'Checklist de compra, relatórios limpos para o cliente',    default_home_tab:'report'},
-      {id:'fleet',      label:'Gestor(a) de Frota',   emoji:'🚚', tagline:'Histórico de cada veículo, custos e prevenção',           default_home_tab:'evolucao'},
+      {id:'mechanic',      label:'Mecânico',                  emoji:'🔧', tagline:'Diagnóstico no veículo, rápido e preciso',              default_home_tab:'scan'},
+      {id:'shop_boss',     label:'Dono(a) de Oficina',        emoji:'🏪', tagline:'Painel de controle da oficina: faturamento, KPIs, tendências', default_home_tab:'dashboard'},
+      {id:'inspector',     label:'Vistoriador Seminovos',     emoji:'🔍', tagline:'Checklist de compra, relatórios limpos para o cliente',    default_home_tab:'report'},
+      {id:'fleet',         label:'Gestor(a) de Frota',        emoji:'🚚', tagline:'Histórico de cada veículo, custos e prevenção',           default_home_tab:'evolucao'},
+      {id:'ev_specialist', label:'Eletricista VE/BEV (HV)',   emoji:'🔋', tagline:'SoC, SoH, BMS, Motor Tração, OBC, Carga CC/CA',            default_home_tab:'scan'},
     ],
     active_id: 'mechanic',
     selected: false,
@@ -1359,10 +1360,11 @@ function PERSONA_VISIBILITY_RULES() {
   // usuário ainda pode chegar nelas via deep-link ou se quiser)
   const m = APP_CONTEXT.persona.active_id;
   return {
-    mechanic:  { order:['scan','dash','hist','evol','dtc'],  demote:['dtc'],         highlight:['scan','hist'] },
-    shop_boss: { order:['dash','hist','evol','scan','dtc'],  demote:['dtc'],         highlight:['dash','hist','evol'] },
-    inspector: { order:['dash','scan','hist','evol','dtc'],  demote:['evol','dtc'],  highlight:['scan','hist'] },
-    fleet:     { order:['dash','evol','hist','scan','dtc'],  demote:['dtc'],         highlight:['evol','hist','dash'] },
+    mechanic:      { order:['scan','dash','hist','evol','dtc'],  demote:['dtc'],         highlight:['scan','hist'] },
+    shop_boss:     { order:['dash','hist','evol','scan','dtc'],  demote:['dtc'],         highlight:['dash','hist','evol'] },
+    inspector:     { order:['dash','scan','hist','evol','dtc'],  demote:['evol','dtc'],  highlight:['scan','hist'] },
+    fleet:         { order:['dash','evol','hist','scan','dtc'],  demote:['dtc'],         highlight:['evol','hist','dash'] },
+    ev_specialist: { order:['scan','dash','evol','hist','dtc'],  demote:['dtc'],         highlight:['scan','dash','evol'] },
   }[m] || { order:['dash','scan','hist','evol','dtc'], demote:[], highlight:[] };
 }
 
@@ -1767,6 +1769,12 @@ const HELP_PERSONAS_TIPS = {
     '2. Exportações em massa: CSV consolidado da evolução + relatórios individuais em PDF.',
     '3. Marque tags em cada atendimento: preventiva, corretiva, pre-ship, recall, revisão 100k.',
     '4. DTCs recorrentes destacadas em amarelo no topo da Evolução → evita frota parada.',
+  ],
+  ev_specialist: [
+    '1. ⚠ NUNCA toque no pack HV sem luva isolante classe 00/1000V certificada e procedimento LOTO (lockout/tagout) do serviço de alta tensão.',
+    '2. Use sempre luva de alta tensão 1000V, capacete dielétrico e tapete borracha. Desconecte o contator de serviço (MSD) antes de abrir caixa BMS/Inverter.',
+    '3. Card ⚡ Alta Tensão: SoC % estimado, V pack, T BMS, T inverter, SoH % (placeholder para leitura UDS $22 em BYD/GWM/Renault/Tesla hoje).',
+    '4. ELM327 lê DIDs básicos de 2 bytes via AT SH 7BB 22 XXXX. Marcas com seed-key (Tesla/VW/BMW) requerem interface J2534 autenticada — hoje não suportado.',
   ],
 };
 

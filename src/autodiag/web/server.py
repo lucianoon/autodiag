@@ -31,6 +31,11 @@ from autodiag.core.config import (
 )
 from autodiag.core.diagnosis import infer_urgency
 from autodiag.core.dtc import full_database, lookup
+from autodiag.core.ev_support import (
+    SUPPORT_LEVEL_LABELS,
+    detectar_propulsao_por_vin,
+    hv_fields_for_brand,
+)
 from autodiag.core.pdf import render_url_to_pdf
 from autodiag.core.readiness import build_readiness_summary
 from autodiag.core.report import build_report, render_report_html
@@ -164,6 +169,30 @@ async def api_put_branding(body: dict[str, Any] = _DEFAULT_BODY_FACTORY):
 
     updated = update_branding({k: str(body.get(k, "")) for k in Branding.__dataclass_fields__})
     return asdict(updated)
+
+
+@app.get("/api/ev-info")
+async def api_ev_info(vin: str | None = None) -> dict[str, Any]:
+    """Detecta propulsão BEV/PHEV/HEV/ICE por VIN e retorna:
+    - marca + confiança + motivo
+    - nivel de suporte EV BR + label PT-BR
+    - lista de campos HV conhecidos (DIDs UDS 0x22) da marca
+
+    Se VIN None/inválido, retorna objeto vazio com level='not_tested'.
+    """
+    ev = detectar_propulsao_por_vin(vin)
+    marca = ev.marca
+    return {
+        "vin": vin or "",
+        "marca": marca,
+        "propensao": ev.propensao,
+        "confianca": ev.confianca,
+        "motivo": ev.motivo,
+        "is_ev_any": ev.is_ev_any(),
+        "ev_support_level": ev.ev_support_level,
+        "level_label": SUPPORT_LEVEL_LABELS.get(ev.ev_support_level, ""),
+        "fields_hv": hv_fields_for_brand(marca),
+    }
 
 
 @app.get("/api/persona")

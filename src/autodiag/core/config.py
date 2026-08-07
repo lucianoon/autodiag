@@ -14,6 +14,7 @@ PERSONA_MECHANIC = "mechanic"
 PERSONA_SHOP_BOSS = "shop_boss"
 PERSONA_INSPECTOR = "inspector"
 PERSONA_FLEET = "fleet"
+PERSONA_EV_SPECIALIST = "ev_specialist"
 
 PERSONAS_META: dict[str, dict[str, str]] = {
     PERSONA_MECHANIC: {
@@ -39,6 +40,12 @@ PERSONAS_META: dict[str, dict[str, str]] = {
         "emoji": "🚚",
         "tagline": "Histórico de cada veículo, custos e prevenção",
         "default_home_tab": "evolucao",
+    },
+    PERSONA_EV_SPECIALIST: {
+        "label": "Eletricista VE/BEV Alta Tensão",
+        "emoji": "🔋",
+        "tagline": "SoC, SoH, temp. célula BMS, motor tração, carga CC/CA",
+        "default_home_tab": "scan",
     },
 }
 

@@ -58,6 +58,34 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   negrito, itálico, `código` — checklist de manutenção, orçamento e
   próximos passos aparecem formatados no PDF/HTML impresso (não há
   interatividade no PDF, óbvio, mas a formatação está lá).
+- **Suporte inicial VE/BEV/PHEV (mercado Brasileiro de elétricos)**:
+  - **5ª persona `ev_specialist`**: Eletricista VE/BEV Alta Tensão 🔋
+    adicionada ao [core/config.py](src/autodiag/core/config.py), com
+    dicas de segurança obrigatórias (LOTO, luva 1000V, capacete dielétrico
+    e MSD) no HELP_PERSONAS_TIPS.
+  - **Módulo novo [core/ev_support.py](src/autodiag/core/ev_support.py)**:
+    detecção de propulsão (BEV/PHEV/HEV/ICE) **por VIN** via regras de
+    WMI + substring posição para marcas top de vendas 2024/25 no Brasil
+    (BYD LGX, GWM LGW, Renault VF1/9BM, Tesla 5YJ/LRW, VW ID WVW/9BW,
+    Stellantis ZFA/VR3, Chery LVV, JAC LJ1, Hyundai KMH, GM). Tabela
+    `HIGH_VOLTAGE_DIDS_BR` de DIDs UDS `$22` HV por marca (SoC %, V pack,
+    I pack, T BMS, T inverter, SoH %, Potência motor tração).
+  - **Níveis de suporte EV BR**: `partial_uds` (BYD/GWM/Renault/Tesla
+    testados via ELM broadcast 7BB 22 XXXX), `partial_obd` (demais com
+    OBD2 padrão sem DIDs HV), `not_tested` (WMI não mapeado), labels
+    PT-BR em `SUPPORT_LEVEL_LABELS`.
+  - **Endpoint novo** `GET /api/ev-info?vin=...`: retorna
+    `{marca, propensao, confianca, motivo, is_ev_any, ev_support_level,
+    level_label, fields_hv}` pronto para UI renderizar card HV.
+  - **Card ⚡ Alta Tensão no relatório HTML/PDF**: `hv_block()` em
+    [core/report.py](src/autodiag/core/report.py) é inserido logo após o
+    orçamento se `ev.is_ev_any()`. Sem leitura real `hv_data` mostra
+    "N/D" por linha com selo **PARCIAL** (nível de suporte da marca);
+    quando `s["hv_data"]` existe (leitura real via UDS futura), mostra
+    valor formatado BR (vírgula como separador decimal) com unidade.
+  - **UI SPA**: chip/modal de 5 personas agora inclui card 🔋
+    Eletricista VE; regras de visibilidade `ev_specialist` destacam
+    Scan / Dashboard / Evolução.
 
 ### Alterado
 

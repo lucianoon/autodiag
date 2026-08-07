@@ -43,6 +43,7 @@ class Session:
     tags: list[str] | None = None
     freeze_frame: dict | None = None
     readiness: dict | None = None
+    hv_data: dict | None = None
     deleted_at: str | None = None
 
 
@@ -98,6 +99,8 @@ class History:
             self._con.execute("ALTER TABLE sessions ADD COLUMN freeze_frame TEXT")
         if "readiness" not in cols:
             self._con.execute("ALTER TABLE sessions ADD COLUMN readiness TEXT")
+        if "hv_data" not in cols:
+            self._con.execute("ALTER TABLE sessions ADD COLUMN hv_data TEXT")
         if "deleted_at" not in cols:
             self._con.execute("ALTER TABLE sessions ADD COLUMN deleted_at TEXT")
         self._con.commit()
@@ -108,8 +111,8 @@ class History:
               (ts, vin, vehicle_label, dtc_codes, urgency, rpm, speed,
                coolant_temp, maf, fuel_trim_short, fuel_trim_long, o2,
                diagnosis, triage_json, cost_min, cost_max, km, notes, tags,
-               freeze_frame, readiness)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               freeze_frame, readiness, hv_data)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             s.ts, s.vin, s.vehicle_label,
             json.dumps(s.dtc_codes, ensure_ascii=False),
@@ -123,6 +126,8 @@ class History:
             if s.freeze_frame is not None else None,
             json.dumps(s.readiness, ensure_ascii=False)
             if s.readiness is not None else None,
+            json.dumps(s.hv_data, ensure_ascii=False)
+            if s.hv_data is not None else None,
         ))
         self._con.commit()
         rowid = cur.lastrowid
@@ -136,6 +141,7 @@ class History:
         d["tags"] = json.loads(d.get("tags") or "null")
         d["freeze_frame"] = json.loads(d.get("freeze_frame") or "null")
         d["readiness"] = json.loads(d.get("readiness") or "null")
+        d["hv_data"] = json.loads(d.get("hv_data") or "null")
         d.pop("triage_json", None)
         return d
 

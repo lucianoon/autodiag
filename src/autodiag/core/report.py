@@ -6,10 +6,20 @@ import io
 import re
 import socket
 from dataclasses import dataclass
+from typing import Any
 
 from autodiag.core.config import Branding, get_branding
 from autodiag.core.cost_estimates import estimate_session_costs, format_brl
 from autodiag.core.dtc import lookup
+from autodiag.core.ev_support import (
+    PROP_COMBUSTION,
+    PROP_ELECTRIC,
+    PROP_HYBRID,
+    PROP_PLUGIN_HYBRID,
+    SUPPORT_LEVEL_LABELS,
+    detectar_propulsao_por_vin,
+    hv_fields_for_brand,
+)
 from autodiag.core.inspection import build_inspection_verdict
 
 try:
@@ -580,6 +590,105 @@ def render_report_html(report: Report) -> str:
             "</div></div></div>"
         )
 
+    def hv_block() -> str:
+        """Card ⚡ Alta Tensão (EV/BEV/PHEV/HEV) só aparece para veículos elétricos.
+
+        Se temos dados HV reais no `s["hv_data"]` (leitura futura via UDS),
+        mostramos valores e cores de status. Senão mostramos os DIDs
+        conhecidos da marca como "N/D" com um aviso coerente.
+        """
+        vin = str(s.get("vin") or "")
+        ev = detectar_propulsao_por_vin(vin)
+        if not ev.is_ev_any():
+            return ""
+        marca = ev.marca
+        hv_raw = s.get("hv_data")
+        hv: dict[str, Any] = hv_raw if isinstance(hv_raw, dict) else {}
+        fields = hv_fields_for_brand(marca)
+        rows_html: list[str] = []
+        any_real = False
+        for f in fields:
+            did_hex = f["id"]
+            did_key = f"did_{did_hex:04X}"
+            valor = hv.get(did_key, hv.get(f["name"]))
+            real = valor is not None and valor != ""
+            if real:
+                any_real = True
+            if real:
+                try:
+                    numeric = float(valor)  # type: ignore[arg-type]
+                    v_str = (
+                        f"{numeric:,.2f}"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", ".")
+                    )
+                except (TypeError, ValueError):
+                    v_str = esc(str(valor))
+                value_cell = f"<strong>{v_str}</strong> {esc(f['unit'])}"
+            else:
+                value_cell = "<span class='text-muted'>N/D</span>"
+            rows_html.append(
+                "<tr>"
+                f"<td class='small text-muted'>0x{did_hex:04X}</td>"
+                f"<td class='small'>{esc(f['name'])}</td>"
+                f"<td class='small'>{value_cell}</td>"
+                f"<td class='small'>{esc(f.get('unit') or '')}</td>"
+                "</tr>"
+            )
+        if not rows_html:
+            return ""
+        status_badge_cls = {
+            PROP_ELECTRIC: "bg-danger",
+            PROP_PLUGIN_HYBRID: "bg-warning text-dark",
+            PROP_HYBRID: "bg-info text-dark",
+            PROP_COMBUSTION: "bg-secondary",
+        }.get(ev.propensao, "bg-secondary")
+        status_badge = (
+            {
+                PROP_ELECTRIC: "BEV Elétrico",
+                PROP_PLUGIN_HYBRID: "PHEV Plug-in",
+                PROP_HYBRID: "HEV Híbrido",
+                PROP_COMBUSTION: "Combustão",
+            }.get(ev.propensao, ev.propensao)
+        )
+        level = ev.ev_support_level
+        level_cls = {
+            "partial_uds": "bg-success",
+            "partial_obd": "bg-warning text-dark",
+            "not_tested": "bg-secondary",
+            "none": "bg-secondary",
+        }.get(level, "bg-secondary")
+        note = SUPPORT_LEVEL_LABELS.get(level, "")
+        header_note = (
+            "" if any_real else f"<span class='badge {level_cls} ms-2'>PARCIAL</span>"
+        )
+        table_html = (
+            "<div class='table-responsive mt-2'>"
+            "<table class='table table-sm table-dark mb-0'>"
+            "<thead><tr><th>DID</th><th>Parâmetro HV</th><th>Valor</th><th>Unid.</th></tr></thead>"
+            f"<tbody>{''.join(rows_html)}</tbody></table></div>"
+        )
+        header_cls = (
+            "card-header small text-muted py-2 "
+            "d-flex flex-wrap gap-2 align-items-center"
+        )
+        return (
+            "<div class='col-12'>"
+            "<div class='card' style='border-left:3px solid #f0883e'>"
+            f"<div class='{header_cls}'>"
+            f"<span>⚡ Alta Tensão (Bateria HV)</span>"
+            f"<span class='badge {status_badge_cls}'>{esc(status_badge)}</span>"
+            f"<span class='badge text-bg-secondary'>{esc(marca or 'Marca?')}</span>"
+            f"{header_note}"
+            f"<span class='badge text-bg-secondary ms-auto'>confiança: {esc(ev.confianca)}</span>"
+            "</div>"
+            "<div class='card-body'>"
+            f"<p class='small text-muted mb-2'>{esc(note)} {esc(ev.motivo or '')}</p>"
+            f"{table_html}"
+            "</div></div></div>"
+        )
+
     def freeze_frame_block() -> str:
         ff = s.get("freeze_frame") or {}
         if not isinstance(ff, dict) or not any(k != "raw" for k in ff):
@@ -873,6 +982,7 @@ def render_report_html(report: Report) -> str:
       {freeze_frame_block()}
       {readiness_block()}
       {cost_block()}
+      {hv_block()}
 
       <div class="col-12">
         <div class="card">
