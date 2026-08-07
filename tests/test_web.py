@@ -133,6 +133,64 @@ class TestApiPatchSession:
         resp = client.patch("/api/session/999999", json={"notes": "novo"})
         assert resp.status_code == 404, resp.text
 
+    def test_patch_km_roundtrip_and_rejections(
+        self, hist: History, client: Any
+    ) -> None:
+        sid = hist.save(_session())
+        ok = client.patch(f"/api/session/{sid}", json={"km": 12_345})
+        assert ok.status_code == 200
+        assert ok.json()["km"] == 12345
+        as_str = client.patch(f"/api/session/{sid}", json={"km": "54321"})
+        assert as_str.status_code == 200
+        assert as_str.json()["km"] == 54321
+        cleared = client.patch(f"/api/session/{sid}", json={"km": ""})
+        assert cleared.status_code == 200
+        assert cleared.json()["km"] is None
+        bad = client.patch(f"/api/session/{sid}", json={"km": "abc"})
+        assert bad.status_code == 400
+        overflow = client.patch(f"/api/session/{sid}", json={"km": 9_999_999_999})
+        assert overflow.status_code == 400
+
+    def test_patch_vin_vehicle_label_hv_data_roundtrip(
+        self, hist: History, client: Any
+    ) -> None:
+        sid = hist.save(_session())
+        payload = {
+            "vin": "  lgxhg61a0pz123456  ",
+            "vehicle_label": "BYD Dolphin Cinza / ABC1D23",
+            "hv_data": {
+                "Estado da Carga (SoC)": 52.3,
+                "Tensão Pack HV": 400.7,
+                "Limpar": "",
+                "CampoLongo": "x" * 200,
+            },
+        }
+        resp = client.patch(f"/api/session/{sid}", json=payload)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["vin"] == "LGXHG61A0PZ123456"
+        assert data["vehicle_label"] == "BYD Dolphin Cinza / ABC1D23"
+        hv = data["hv_data"] or {}
+        assert hv.get("Estado da Carga (SoC)") == 52.3
+        assert hv.get("Tensão Pack HV") == 400.7
+        # "Limpar" com string vazia é salva? Aceitamos str (mas não None).
+        # Campo longo > 120 é truncado.
+        assert len(hv.get("CampoLongo") or "") <= 120
+
+    def test_patch_hv_data_not_object_rejected(
+        self, hist: History, client: Any
+    ) -> None:
+        sid = hist.save(_session())
+        resp = client.patch(f"/api/session/{sid}", json={"hv_data": ["nao_obj"]})
+        assert resp.status_code == 400, resp.text
+
+    def test_patch_vehicle_label_invalid_type_rejected(
+        self, hist: History, client: Any
+    ) -> None:
+        sid = hist.save(_session())
+        resp = client.patch(f"/api/session/{sid}", json={"vehicle_label": 42})
+        assert resp.status_code == 400, resp.text
+
 
 class TestApiDeleteSession:
     def test_soft_delete_and_get_unavailable(self, hist: History, client: Any) -> None:
@@ -213,6 +271,54 @@ class TestApiBranding:
         data = resp.json()
         assert data["workshop_name"] == "Oficina do Pedrão"
         assert data["mechanic_name"] == "Pedro"
+
+
+class TestScanStreamManualParams:
+    def test_manual_vin_label_km_applied_in_demo_mode(
+        self, client: Any, hist: History
+    ) -> None:
+        """Params query ?vin=&vehicle_label=&km= sobrescrevem no modo demo."""
+        import json as _sj
+
+        vin_events: list[dict] = []
+        saved_events: list[dict] = []
+        url = (
+            "/api/scan/stream?demo=true"
+            "&vin=LGXHG61A0PZ123456"
+            "&vehicle_label=BYD Dolphin (manual)"
+            "&km=42500"
+        )
+        with client.stream("GET", url) as resp:
+            assert resp.status_code == 200, resp.text
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                text = line.decode("utf-8") if isinstance(line, bytes) else line
+                if not text.startswith("data: "):
+                    continue
+                try:
+                    ev = _sj.loads(text[len("data: "):])
+                except Exception:
+                    continue
+                if ev.get("type") == "vin":
+                    vin_events.append(ev)
+                if ev.get("type") == "saved":
+                    saved_events.append(ev)
+                if ev.get("type") in ("error", "done"):
+                    break
+        # Evento VIN disparado com label manual + VIN param
+        assert len(vin_events) >= 1
+        last_vin = vin_events[-1]
+        assert last_vin["vin"] == "LGXHG61A0PZ123456"
+        assert "BYD Dolphin (manual)" in last_vin["vehicle"]
+        # Sessão salva recebeu km correto
+        assert len(saved_events) >= 1
+        sid = saved_events[-1]["session_id"]
+        fetched = hist.get(sid)
+        assert fetched is not None
+        assert fetched["km"] == 42500
+        assert fetched["vin"] == "LGXHG61A0PZ123456"
+        assert fetched["vehicle_label"] == "BYD Dolphin (manual)"
 
 
 class TestApiScanLive:

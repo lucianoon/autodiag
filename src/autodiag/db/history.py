@@ -11,6 +11,8 @@ from typing import Any
 
 DB_PATH = Path.home() / ".autodiag" / "history.db"
 
+_UNSET: Any = object()
+
 
 def _default_db_path() -> Path:
     custom_path = os.environ.get("AUTODIAG_DB_PATH")
@@ -146,7 +148,11 @@ class History:
         return d
 
     def update_session(self, sid: int, *, notes: str | None = None,
-                       tags: list[str] | None = None) -> dict | None:
+                       tags: list[str] | None = None,
+                       vin: Any = _UNSET,
+                       vehicle_label: Any = _UNSET,
+                       km: Any = _UNSET,
+                       hv_data: Any = _UNSET) -> dict | None:
         existing = self.get(sid)
         if existing is None:
             return None
@@ -158,6 +164,20 @@ class History:
         if tags is not None:
             updates.append("tags = ?")
             params.append(json.dumps(tags, ensure_ascii=False))
+        if vin is not _UNSET:
+            updates.append("vin = ?")
+            params.append(vin or None)
+        if vehicle_label is not _UNSET:
+            updates.append("vehicle_label = ?")
+            params.append(vehicle_label or None)
+        if km is not _UNSET:
+            updates.append("km = ?")
+            params.append(int(km) if km is not None and km != "" else None)
+        if hv_data is not _UNSET:
+            updates.append("hv_data = ?")
+            params.append(
+                json.dumps(hv_data, ensure_ascii=False) if hv_data is not None else None
+            )
         if not updates:
             return existing
         params.append(sid)

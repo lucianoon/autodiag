@@ -172,6 +172,101 @@
           </div>
         </div>
 
+        <div class="col-12" id="scan-ev-banner-mount"></div>
+
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header small text-muted py-2 d-flex align-items-center">
+              <span class="fw-bold me-2">📝 Dados cadastrais do veículo</span>
+              <span class="small text-muted ms-2">(opcional — preencha se quiser cadastrar manualmente VIN, KM, placa; EV pode deixar os campos HV para demo)</span>
+              <button class="btn btn-sm btn-outline-secondary ms-auto"
+                      type="button" data-bs-toggle="collapse" data-bs-target="#collapse-manual"
+                      aria-expanded="true" aria-controls="collapse-manual" onclick="this.classList.toggle('collapsed')">
+                ▸ Expandir / Recolher
+              </button>
+            </div>
+            <div class="collapse show" id="collapse-manual">
+              <div class="card-body">
+                <div class="row g-2">
+                  <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">VIN (17 digitos)</label>
+                    <input type="text" class="form-control form-control-sm" id="scan-vin" maxlength="30"
+                      placeholder="LGXFG61A0PZ000000 (BYD) — detecta BEV/PHEV automaticamente">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">KM atual</label>
+                    <input type="number" class="form-control form-control-sm" id="scan-km" min="0" max="99999999"
+                      placeholder="ex: 42500">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label text-muted small mb-1">Veículo / Placa (livre)</label>
+                    <input type="text" class="form-control form-control-sm" id="scan-vehicle-label" maxlength="200"
+                      placeholder="BYD Dolphin 2025 Cinza / Placa ABC1D23">
+                  </div>
+                </div>
+
+                <div class="row g-2 mt-3 collapse" id="collapse-hv-inputs">
+                  <div class="col-12 small text-success fw-bold mb-1">🔋 Campos Alta Tensão (HV) — preencha manualmente (modo demo).
+                    <span class="text-muted ms-2 fw-normal">Os valores abaixo são salvos no campo hv_data JSON e aparecem no relatório PDF/HTML.
+                    Quando o UDS/SocketCAN for implementado, esses campos serão preenchidos automaticamente.</span>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">SoC (%)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Estado da Carga (SoC)" data-hv-unit="%" min="0" max="100" placeholder="72,4">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">Tensão Pack HV (V)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Tensão Pack HV" data-hv-unit="V" placeholder="403,2">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">Corrente Pack (A)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Corrente Pack" data-hv-unit="A" placeholder="-12,3 (neg = regenerar)">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">Temp. média BMS (°C)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Temperatura BMS média" data-hv-unit="°C" placeholder="28,5">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">SoH estimado (%)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Saúde da bateria (SoH)" data-hv-unit="%" placeholder="96,8">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label text-muted small mb-1">Potência tração (kW)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Potência tração" data-hv-unit="kW" placeholder="42,5">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">Temp. inversor (°C)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Temperatura inversor" data-hv-unit="°C" placeholder="33,1">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">Célula máxima (V)</label>
+                    <input type="number" step="0.001" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Tensão célula máxima" data-hv-unit="V" placeholder="3,642">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label text-muted small mb-1">Célula mínima (V)</label>
+                    <input type="number" step="0.001" class="form-control form-control-sm hv-manual"
+                      data-hv-label="Tensão célula mínima" data-hv-unit="V" placeholder="3,618">
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="window._hvDemoFill && window._hvDemoFill()">
+                      🤖 Preencher exemplo (Dolphin 52%)
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="col-md-6" id="scan-health-card" style="display:none">
           <div class="card h-100">
             <div class="card-header small text-muted py-2">Status OBD</div>
@@ -453,6 +548,159 @@ const sevBadge = s => {
   return `<span class="badge bg-${SEV[sev]}">${esc(sev)}</span>`;
 };
 
+// EV cache (por VIN): ev_info_promise_map evita chamadas duplicadas à API
+const _EV_INFO_CACHE = new Map();
+function getEvInfo(vin) {
+  if (!vin || !vin.trim()) return Promise.resolve(null);
+  const v = String(vin).trim().toUpperCase();
+  if (_EV_INFO_CACHE.has(v)) return _EV_INFO_CACHE.get(v);
+  const p = fetch(`/api/ev-info?vin=${encodeURIComponent(v)}`)
+    .then(r => r.ok ? r.json() : null)
+    .catch(() => null);
+  _EV_INFO_CACHE.set(v, p);
+  return p;
+}
+function isEvAny(info) {
+  return !!(info && info.is_ev_any);
+}
+function renderEvSmallBadge(info) {
+  if (!isEvAny(info)) return '';
+  const level = info.ev_support_level || 'not_tested';
+  const clsMap = {
+    partial_uds: 'bg-success', partial_obd: 'bg-warning text-dark',
+    not_tested: 'bg-secondary', none: 'bg-secondary'
+  };
+  const cls = clsMap[level] || 'bg-secondary';
+  let tag = 'BEV';
+  if (info.propensao === 'phev') tag = 'PHEV';
+  else if (info.propensao === 'hev') tag = 'HEV';
+  return `<span class="badge ${cls} small ms-1" title="${esc(info.level_label || '')}">🔋 ${tag}</span>`;
+}
+function renderHvCardForDashboard(info, hvData) {
+  if (!isEvAny(info)) return '';
+  const fields = info.fields_hv || [];
+  const hv = hvData && typeof hvData === 'object' ? hvData : {};
+  const rows = fields.slice(0, 6).map(f => {
+    const key = `did_${(f.id || 0).toString(16).toUpperCase().padStart(4, '0')}`;
+    const raw = (hv[key] != null) ? hv[key] : ((hv[f.name] != null) ? hv[f.name] : null);
+    const has = raw != null && raw !== '';
+    let cell;
+    if (has) {
+      try {
+        const n = Number(raw);
+        const formatted = Number.isFinite(n)
+          ? n.toLocaleString('pt-BR', {maximumFractionDigits: 2})
+          : String(raw);
+        cell = `<strong>${esc(formatted)}</strong> ${esc(f.unit || '')}`;
+      } catch (e) { cell = `<strong>${esc(String(raw))}</strong>`; }
+    } else {
+      cell = `<span class="text-muted">N/D</span>`;
+    }
+    return `<tr><td class="small text-muted">0x${(f.id || 0).toString(16).toUpperCase().padStart(4, '0')}</td><td class="small">${esc(f.name)}</td><td>${cell}</td><td class="small">${esc(f.unit || '')}</td></tr>`;
+  }).join('');
+  const level = info.ev_support_level || 'not_tested';
+  const levelCls = {
+    partial_uds: 'bg-success', partial_obd: 'bg-warning text-dark',
+    not_tested: 'bg-secondary', none: 'bg-secondary'
+  }[level] || 'bg-secondary';
+  const propCls = {
+    electric: 'bg-danger', phev: 'bg-warning text-dark',
+    hev: 'bg-info text-dark'
+  }[info.propensao] || 'bg-secondary';
+  const propLabel = {electric: 'BEV', phev: 'PHEV', hev: 'HEV'}[info.propensao] || 'EV';
+  const tableHtml = rows ? (
+    `<div class="table-responsive mt-2">
+      <table class="table table-sm table-dark mb-0">
+        <thead><tr><th>DID</th><th>Parâmetro HV</th><th>Valor</th><th>Unid.</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+  ) : '';
+  return (
+    `<div class="col-12">
+      <div class="card" style="border-left:3px solid #f0883e">
+        <div class="card-header small text-muted py-2 d-flex flex-wrap gap-2 align-items-center">
+          <span>⚡ Alta Tensão (Bateria HV)</span>
+          <span class="badge ${propCls}">${propLabel}</span>
+          <span class="badge text-bg-secondary">${esc(info.marca || 'Marca?')}</span>
+          <span class="badge ${levelCls}">${esc(info.level_label ? (info.level_label.slice(0,30) + (info.level_label.length>30?'…':'')) : level)}</span>
+          <span class="badge text-bg-secondary ms-auto">confiança: ${esc(info.confianca || '?')}</span>
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-2">${esc(info.level_label || '')} ${esc(info.motivo || '')}</p>
+          ${tableHtml}
+        </div>
+      </div>
+    </div>`
+  );
+}
+function renderHvBannerScan(info) {
+  if (!isEvAny(info)) return '';
+  const level = info.ev_support_level || 'not_tested';
+  const isPartial = (level !== 'none') && !info._isFull;
+  const cls = (level === 'partial_uds') ? 'warning' : 'secondary';
+  return (
+    `<div class="alert alert-${cls} mb-3 small" role="alert" style="border-left:3px solid #f0883e">
+      <div class="fw-bold mb-1">🔋 Veículo ${esc(info.propensao && info.propensao.toUpperCase())} detectado (${esc(info.marca || '')}) — Suporte PARCIAL hoje via ELM327</div>
+      <ul class="mb-0 ps-3">
+        <li>⚠ Use <strong>luva isolante classe 1000V</strong>, capacete dielétrico e tapete borracha antes de abrir BMS/Inversor.</li>
+        <li>🔒 <strong>LOTO (lockout/tagout)</strong>: desconecte o contator de serviço (MSD) e aguarde 5 min de descarga dos capacitores.</li>
+        <li>📡 ELM327 lê DIDs UDS $22 HV só em marcas sem seed-key (BYD/GWM/Renault hoje). Tesla/VW/BMW exigem interface J2534 autenticada.</li>
+        <li>📝 Campos HV mostrados como N/D são placeholders para futura implementação UDS/SocketCAN.</li>
+      </ul>
+    </div>`
+  );
+}
+
+function collectManualHvData() {
+  const obj = {};
+  document.querySelectorAll('input.hv-manual').forEach(inp => {
+    const v = inp.value;
+    if (v == null || v === '') return;
+    const label = inp.getAttribute('data-hv-label') || inp.name || inp.id;
+    const unit = inp.getAttribute('data-hv-unit') || '';
+    let numeric = Number(v);
+    if (!Number.isFinite(numeric)) {
+      obj[label] = String(v);
+      return;
+    }
+    obj[label] = numeric;
+    // Também salva como chave unidade, ajuda na procura futura
+    if (unit) obj[`${label} (${unit})`] = numeric;
+  });
+  return Object.keys(obj).length ? obj : null;
+}
+function updateScanEvUI(info) {
+  const banner = document.getElementById('scan-ev-banner-mount');
+  const hvEl = document.getElementById('collapse-hv-inputs');
+  if (!banner || !hvEl) return;
+  if (isEvAny(info)) {
+    banner.innerHTML = renderHvBannerScan(info);
+    const instance = bootstrap.Collapse.getOrCreateInstance(hvEl, {toggle: false});
+    instance.show();
+  } else {
+    banner.innerHTML = '';
+    try { bootstrap.Collapse.getOrCreateInstance(hvEl, {toggle: false}).hide(); } catch (_) {}
+  }
+}
+window._hvDemoFill = function _hvDemoFill() {
+  const values = {
+    'Estado da Carga (SoC)': 52.3,
+    'Tensão Pack HV': 398.6,
+    'Corrente Pack': -8.2,
+    'Temperatura BMS média': 27.4,
+    'Saúde da bateria (SoH)': 95.1,
+    'Potência tração': 18.6,
+    'Temperatura inversor': 31.8,
+    'Tensão célula máxima': 3.612,
+    'Tensão célula mínima': 3.591,
+  };
+  document.querySelectorAll('input.hv-manual').forEach(inp => {
+    const k = inp.getAttribute('data-hv-label') || '';
+    if (values[k] != null) inp.value = String(values[k]);
+  });
+};
+
 function pidBar(val, max, color) {
   const pct = Math.min(100, Math.max(0, (Math.abs(val) / max) * 100));
   return `<div class="progress mb-1" style="height:6px">
@@ -718,6 +966,8 @@ async function loadDash() {
         </div>
       </div>
     </div>`;
+    // Placeholder para o card HV (renderizado assincronamente após fetch da API ev-info)
+    html += `<div class="col-12" id="dash-hv-mount" data-last-id="${esc(last.id)}" data-last-vin="${esc(last.vin || '')}"></div>`;
     document.getElementById('last-scan-label').textContent = `Último scan: ${last.ts}`;
   } else {
     html += `<div class="col-12 text-center text-muted py-4">
@@ -727,6 +977,15 @@ async function loadDash() {
 
   document.getElementById('dash-content').innerHTML = html;
   if (last) activateAllNoteChecklists();
+
+  // Monta card HV de último scan (async, não bloqueia o dashboard)
+  if (last && last.vin) {
+    getEvInfo(last.vin).then(info => {
+      const mount = document.getElementById('dash-hv-mount');
+      if (!mount || !isEvAny(info)) return;
+      mount.innerHTML = renderHvCardForDashboard(info, last.hv_data || null);
+    });
+  }
 }
 
 // ── delete confirm + refresh UI ───────────────────────────────────────────────
@@ -798,6 +1057,12 @@ function startScan() {
   const wifi  = document.getElementById('scan-wifi').value.trim();
   const noAi  = document.getElementById('scan-no-ai').checked;
   const demo  = document.getElementById('scan-demo').checked;
+  const vinEl = document.getElementById('scan-vin');
+  const kmEl  = document.getElementById('scan-km');
+  const vlEl  = document.getElementById('scan-vehicle-label');
+  const vin   = vinEl ? vinEl.value.trim().toUpperCase() : '';
+  const kmRaw = kmEl ? kmEl.value.trim() : '';
+  const vehicleLabel = vlEl ? vlEl.value.trim() : '';
   const btn   = document.getElementById('scan-btn');
 
   const params = new URLSearchParams();
@@ -805,6 +1070,17 @@ function startScan() {
   if (wifi)  params.set('wifi', wifi);
   if (noAi)  params.set('no_ai', 'true');
   if (demo)  params.set('demo', 'true');
+  if (vin)   params.set('vin', vin);
+  if (vehicleLabel) params.set('vehicle_label', vehicleLabel);
+  if (kmRaw) params.set('km', kmRaw);
+
+  // Preview rápido: se o usuário preencheu VIN manual, já mostra o banner EV antes
+  // da conexão (e deixa o collapse HV aberto)
+  if (vin) {
+    getEvInfo(vin).then(info => {
+      if (info) updateScanEvUI(info);
+    });
+  }
 
   btn.disabled = true;
   btn.textContent = '⏳ Escaneando...';
@@ -818,7 +1094,23 @@ function startScan() {
     if (ev.type === 'status')  logLine(ev.message);
     if (ev.type === 'warn')    logLine(ev.message, 'log-warn');
     if (ev.type === 'error')   logLine('ERRO: ' + ev.message, 'log-err');
-    if (ev.type === 'vin')     logLine(`VIN: ${ev.vin} → ${ev.vehicle}`, 'log-ok');
+    if (ev.type === 'vin') {
+      logLine(`VIN: ${ev.vin} → ${ev.vehicle}`, 'log-ok');
+      // Se ELM retornou VIN real, popula input e mostra banner HV se aplicável
+      const vinEl2 = document.getElementById('scan-vin');
+      const vlEl2  = document.getElementById('scan-vehicle-label');
+      if (vinEl2 && ev.vin && ev.vin !== '—' && !vinEl2.value.trim()) {
+        vinEl2.value = String(ev.vin).trim().toUpperCase();
+      }
+      if (vlEl2 && ev.vehicle && !vlEl2.value.trim()) {
+        vlEl2.value = String(ev.vehicle);
+      }
+      if (ev.vin && ev.vin !== '—') {
+        getEvInfo(ev.vin).then(info => {
+          if (info) updateScanEvUI(info);
+        });
+      }
+    }
 
     if (ev.type === 'vehicle_status') {
       document.getElementById('scan-health-body').innerHTML = renderVehicleStatus(ev);
@@ -873,6 +1165,26 @@ function startScan() {
 
     if (ev.type === 'saved') {
       logLine(`Diagnóstico #${ev.session_id} salvo — urgência: ${ev.urgency}`, 'log-ok');
+      // PATCH assíncrono: salva hv_data manual (inputs HV do formulário) no registro
+      // recém-criado, assim o card HV no PDF/HTML e no Dashboard já mostra os valores.
+      const manualHv = collectManualHvData();
+      const vinVal   = document.getElementById('scan-vin')?.value.trim().toUpperCase() || '';
+      const vlVal    = document.getElementById('scan-vehicle-label')?.value.trim() || '';
+      const kmStr    = document.getElementById('scan-km')?.value.trim() || '';
+      const patch = {};
+      if (manualHv) patch.hv_data = manualHv;
+      if (vinVal) patch.vin = vinVal;
+      if (vlVal) patch.vehicle_label = vlVal;
+      if (kmStr) patch.km = kmStr;
+      if (Object.keys(patch).length) {
+        fetch(`/api/session/${ev.session_id}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(patch),
+        }).then(r => {
+          if (r.ok) logLine('Campos HV / cadastrais gravados no registro.', 'log-ok');
+        }).catch(() => {});
+      }
     }
 
     if (ev.type === 'done' || ev.type === 'error') {
@@ -1039,10 +1351,10 @@ async function loadHistory() {
     const freezePreview = (s.freeze_frame && Object.keys(s.freeze_frame).some(k => k !== 'raw' && s.freeze_frame[k] != null && s.freeze_frame[k] !== ''))
       ? `<span class="badge text-bg-info small me-1">❄</span>`
       : '';
-    return `<tr>
+    return `<tr data-sid="${esc(s.id)}">
       <td class="text-muted small">#${esc(s.id)}</td>
       <td class="small">${esc(s.ts)}</td>
-      <td class="small">${esc(s.vehicle_label || '—')}</td>
+      <td class="small" data-hist-vin="${esc(s.vin || '')}">${esc(s.vehicle_label || '—')}</td>
       <td>${dtcs}</td>
       <td>${sevBadge(s.urgency)}</td>
       <td class="text-muted small">${esc(s.km || '—')}</td>
@@ -1059,6 +1371,21 @@ async function loadHistory() {
     </tr>`;
   }).join('');
   activateAllNoteChecklists();
+
+  // Monta badges 🔋 BEV/PHEV/HEV assíncronos nas linhas do histórico (por VIN, cacheado)
+  const vins = [...new Set(rows.map(r => (r.vin || '').trim()).filter(Boolean))];
+  if (vins.length) {
+    Promise.all(vins.map(v => getEvInfo(v).then(info => [v, info]))).then(pairs => {
+      const byVin = new Map(pairs);
+      document.querySelectorAll('[data-hist-vin]').forEach(cell => {
+        const vin = cell.getAttribute('data-hist-vin');
+        if (!vin) return;
+        const info = byVin.get(vin);
+        const badge = renderEvSmallBadge(info);
+        if (badge) { cell.insertAdjacentHTML('beforeend', badge); }
+      });
+    });
+  }
 }
 
 // ── DTC lookup ────────────────────────────────────────────────────────────────
@@ -1859,6 +2186,24 @@ async function bootApp() {
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('nm-tags');
   if (el) el.addEventListener('input', _renderTagsPreview);
+  // Scan: observa input VIN para mostrar banner HV + inputs HV automaticamente
+  // (evita N fetchs a cada keyup: 400ms debounce)
+  const vinInput = document.getElementById('scan-vin');
+  if (vinInput) {
+    let vinT = null;
+    vinInput.addEventListener('input', () => {
+      if (vinT) clearTimeout(vinT);
+      vinT = setTimeout(() => {
+        const v = vinInput.value.trim().toUpperCase();
+        if (!v) { updateScanEvUI(null); return; }
+        getEvInfo(v).then(info => updateScanEvUI(info || null));
+      }, 400);
+    });
+    vinInput.addEventListener('blur', () => {
+      const v = vinInput.value.trim().toUpperCase();
+      if (v) getEvInfo(v).then(info => updateScanEvUI(info || null));
+    });
+  }
   bootApp();
 });
 

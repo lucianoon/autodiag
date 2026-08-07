@@ -110,28 +110,83 @@ async def api_patch_session(
     sid: int,
     body: dict[str, Any] = _DEFAULT_BODY_FACTORY,
 ):
-    allowed = {"notes": str, "tags": list}
+    allowed = {"notes": (str,), "tags": (list,), "hv_data": (dict,), "km": (int, str, type(None)),
+               "vin": (str, type(None)), "vehicle_label": (str, type(None))}
     patch: dict[str, Any] = {}
     for k, _t in allowed.items():
-        if k in body:
-            v = body.get(k)
-            if k == "tags":
-                if not isinstance(v, list):
-                    raise HTTPException(status_code=400, detail="tags deve ser lista")
-                if not all(isinstance(t, str) for t in v):
-                    raise HTTPException(status_code=400, detail="tags deve ser lista de strings")
-                if len(v) > 16:
-                    raise HTTPException(status_code=400, detail="maximo 16 tags")
-                cleaned_tags: list[str] = []
-                for t in v:
-                    t_clean = t.strip()[:80]
-                    if t_clean:
-                        cleaned_tags.append(t_clean)
-                patch["tags"] = cleaned_tags
-            if k == "notes":
-                if not isinstance(v, str):
-                    raise HTTPException(status_code=400, detail="notes deve ser string")
-                patch["notes"] = v.strip()[:4000]
+        if k not in body:
+            continue
+        v = body.get(k)
+        if k == "tags":
+            if not isinstance(v, list):
+                raise HTTPException(status_code=400, detail="tags deve ser lista")
+            if not all(isinstance(t, str) for t in v):
+                raise HTTPException(status_code=400, detail="tags deve ser lista de strings")
+            if len(v) > 16:
+                raise HTTPException(status_code=400, detail="maximo 16 tags")
+            cleaned_tags: list[str] = []
+            for t in v:
+                t_clean = t.strip()[:80]
+                if t_clean:
+                    cleaned_tags.append(t_clean)
+            patch["tags"] = cleaned_tags
+            continue
+        if k == "notes":
+            if not isinstance(v, str):
+                raise HTTPException(status_code=400, detail="notes deve ser string")
+            patch["notes"] = v.strip()[:4000]
+            continue
+        if k == "hv_data":
+            if not isinstance(v, dict):
+                raise HTTPException(status_code=400, detail="hv_data deve ser objeto JSON")
+            if len(v) > 128:
+                raise HTTPException(status_code=400, detail="hv_data maximo 128 chaves")
+            cleaned_hv: dict[str, Any] = {}
+            for hk, hv in v.items():
+                if not isinstance(hk, str) or len(hk) > 64:
+                    continue
+                if hv is None or isinstance(hv, (str, int, float, bool)):
+                    cleaned_hv[hk] = hv[:120] if isinstance(hv, str) else hv
+            patch["hv_data"] = cleaned_hv
+            continue
+        if k == "km":
+            if v is None or v == "":
+                patch["km"] = None
+                continue
+            try:
+                km_num = int(v)
+            except (TypeError, ValueError) as _e:
+                    raise HTTPException(
+                        status_code=400, detail="km invalido (int esperado)"
+                    ) from _e
+            if km_num < 0 or km_num > 99_999_999:
+                raise HTTPException(
+                    status_code=400,
+                    detail="km fora do intervalo [0..99.999.999]",
+                )
+            patch["km"] = km_num
+            continue
+        if k == "vin":
+            if v is None:
+                patch["vin"] = None
+                continue
+            if not isinstance(v, str):
+                raise HTTPException(
+                    status_code=400, detail="vin invalido (string esperada)"
+                )
+            cleaned = v.strip().upper()[:30]
+            patch["vin"] = cleaned or None
+            continue
+        if k == "vehicle_label":
+            if v is None:
+                patch["vehicle_label"] = None
+                continue
+            if not isinstance(v, str):
+                msg = "vehicle_label invalido (string esperada)"
+                raise HTTPException(status_code=400, detail=msg)
+            cleaned = v.strip()[:200]
+            patch["vehicle_label"] = cleaned or None
+            continue
     with History() as history:
         if not patch:
             row = history.get(sid)
@@ -524,6 +579,9 @@ async def api_scan_stream(
     wifi: str = Query(None),
     no_ai: bool = Query(False),
     demo: bool = Query(False),
+    vin: str | None = Query(None),
+    vehicle_label: str | None = Query(None),
+    km: int | None = Query(None),
 ):
     loop = asyncio.get_event_loop()
     q: asyncio.Queue = asyncio.Queue()
@@ -564,22 +622,36 @@ async def api_scan_stream(
             )
 
             send({"type": "status", "message": "Lendo VIN..."})
-            vin = reader.get_vin()
-            vehicle = decode_vin_local(vin) if vin else VehicleProfile()
-            if vin and len(vin) == 17 and not demo:
+            vin_elm = reader.get_vin()
+            vin_param_clean = vin.strip() if vin and isinstance(vin, str) else None
+            if vin_param_clean:
+                # Usuário cadastrou o VIN manualmente (ou modo demo ou
+                # preenchimento de formulário): sempre prioriza o manual
+                final_vin = vin_param_clean
+            elif vin_elm and len(vin_elm) >= 5:
+                final_vin = vin_elm
+            else:
+                final_vin = None
+            vehicle = decode_vin_local(final_vin) if final_vin else VehicleProfile()
+            vehicle.vin = final_vin or vehicle.vin
+            manual_label = (vehicle_label or "").strip()
+            if final_vin and len(final_vin) == 17 and not demo:
                 try:
                     import httpx as _httpx
 
-                    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{vin}?format=json"
+                    url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/{final_vin}?format=json"
                     result = _httpx.get(url, timeout=6.0).json().get("Results", [{}])[0]
-                    vehicle.make = result.get("Make") or vehicle.make
-                    vehicle.model = result.get("Model") or ""
-                    year = result.get("ModelYear") or ""
-                    if year.isdigit():
-                        vehicle.year = int(year)
+                    make_get = result.get("Make") or None
+                    if make_get and not manual_label:
+                        vehicle.make = make_get
+                        vehicle.model = result.get("Model") or vehicle.model
+                        year = result.get("ModelYear") or ""
+                        if year.isdigit():
+                            vehicle.year = int(year)
                 except Exception:
                     pass
-            send({"type": "vin", "vin": vin or "—", "vehicle": vehicle.label})
+            final_label = manual_label or vehicle.label or "Veículo sem VIN"
+            send({"type": "vin", "vin": vehicle.vin or "—", "vehicle": final_label})
 
             send({"type": "status", "message": "Lendo DTCs..."})
             dtcs = reader.get_dtcs()
@@ -636,7 +708,7 @@ async def api_scan_stream(
                         id=None,
                         ts=datetime.now().strftime("%d/%m/%Y %H:%M"),
                         vin=vehicle.vin,
-                        vehicle_label=vehicle.label,
+                        vehicle_label=final_label,
                         dtc_codes=[d.code for d in all_dtcs],
                         urgency=urgency,
                         rpm=pids.rpm,
@@ -650,7 +722,7 @@ async def api_scan_stream(
                         triage=triage,
                         cost_min=0,
                         cost_max=0,
-                        km=None,
+                        km=km,
                         notes="",
                         freeze_frame=freeze_frame,
                         readiness=readiness,

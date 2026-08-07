@@ -86,6 +86,40 @@ versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
   - **UI SPA**: chip/modal de 5 personas agora inclui card 🔋
     Eletricista VE; regras de visibilidade `ev_specialist` destacam
     Scan / Dashboard / Evolução.
+  - **Card HV (Alta Tensão) no Dashboard**: no card "Último diagnóstico" do
+    Dashboard, SPA chama `/api/ev-info?vin=` assíncrono (não bloqueia o
+    primeiro paint) e renderiza mini tabela HV com DIDs + valores do
+    `hv_data` salvo (ou "N/D" com selo PARCIAL). Cache global por VIN
+    `_EV_INFO_CACHE` evita N fetchs repetidos no Histórico.
+  - **Badge 🔋 BEV/PHEV/HEV na coluna Veículo do Histórico**: tabela de
+    histórico extrai VINs únicos (Set de N linhas → até 30), envia 1 lote de
+    `Promise.all` de `/api/ev-info` e injeta badge colorido por nível de
+    suporte (verde = partial_uds, amarelo = partial_obd) no fim do label do
+    veículo.
+  - **Formulário Scan com dados cadastrais + HV opcionais**: colapsos
+    `Dados do veículo` (VIN, KM, Veículo/Placa) e `Campos HV (demo)` com
+    9 inputs numéricos (SoC %, V Pack, Corrente Pack, T BMS, SoH %,
+    Potência tração, T Inversor, V célula máx/min) + botão preencher
+    exemplo Dolphin 52%.
+  - **Banner segurança e aviso PARCIAL no Scan**: quando VIN digitado ou
+    retornado do ELM é detectado BEV/PHEV/HEV via listener `input/debounce
+    400ms` + `blur`, renderiza `alert alert-warning` com 4 bullets de
+    segurança (luva 1000V, LOTO + MSD, limitações ELM sem seed-key,
+    placeholders N/D UDS futuro).
+  - **PATCH /api/session/{sid} aceita vin / vehicle_label / km / hv_data**:
+    validação de tipos e limites (km 0..99.999.999, vehicle_label até 200
+    chars, hv_data dict ≤ 128 chaves com valores primitivos). Usado pelo
+    Scan após evento `saved` para persistir inputs HV manuais no registro
+    recém-criado, assim o Dashboard e o PDF já mostram os valores de demo.
+  - **`/api/scan/stream?demo=true` aceita query params `vin`, `vehicle_label`,
+    `km`**: quando o usuário preenche no formulário Scan, esses valores são
+    anexados no EventSource e sobrescrevem o retorno do ELM no modo demo /
+    quando o ELM não lê o VIN corretamente.
+  - **`update_session()` do `History` ganhou sentinela `_UNSET`**: vin,
+    vehicle_label, km, hv_data usam `_UNSET` como default para distinguir
+    "não atualizar este campo" (default) vs "setar o campo para NULL"
+    (passado explicitamente). Compatível 100% com os campos antigos
+    (notes/tags continuam com default None e semântica inalterada).
 
 ### Alterado
 
