@@ -68,4 +68,7 @@ EXPOSE 8000
 USER 10007
 
 ENTRYPOINT ["/usr/bin/tini", "--", "python", "-m", "uvicorn", "autodiag.web.server:app"]
-CMD ["--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Sem confiança em X-Forwarded-* por padrão: um contêiner exposto diretamente
+# não deve aceitar headers de proxy forjados. O docker-compose (atrás do
+# Caddy, em rede interna) sobrescreve o command com --proxy-headers.
+CMD ["--host", "0.0.0.0", "--port", "8000"]

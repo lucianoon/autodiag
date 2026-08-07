@@ -380,14 +380,14 @@ class TestApiReportPdf:
     ) -> None:
         """Se playwright não tiver instalado ou chromium ausente, deve cair
         em RuntimeError tratado → 503 JSON com mensagem reutilizável de UI.
-        Aqui forçamos o erro monkeypatchando a função render_url_to_pdf
-        diretamente (sem instalar/desinstalar dependências) e validamos que
-        a camada web entrega um payload de erro coerente."""
-        from autodiag.core import pdf as pdf_mod
+        Aqui forçamos o erro monkeypatchando render_html_to_pdf no módulo do
+        server (onde o nome foi importado) e validamos que a camada web
+        entrega um payload de erro coerente."""
+        from autodiag.web import server as srv
 
         monkeypatch.setattr(
-            pdf_mod,
-            "render_url_to_pdf",
+            srv,
+            "render_html_to_pdf",
             lambda *a, **kw: (_ for _ in ()).throw(
                 RuntimeError("playwright_required simulado")
             ),
@@ -545,3 +545,74 @@ class TestApiEvInfo:
         assert r.status_code == 200
         d = r.json()
         assert d["is_ev_any"] is False
+
+
+class TestTrustedHostGuard:
+    def test_localhost_and_ip_hosts_are_allowed(self, client: Any) -> None:
+        assert client.get("/api/ping", headers={"host": "localhost:8000"}).status_code == 200
+        assert client.get("/api/ping", headers={"host": "127.0.0.1:8000"}).status_code == 200
+        assert client.get("/api/ping", headers={"host": "192.168.0.42:8000"}).status_code == 200
+        assert client.get("/api/ping", headers={"host": "[::1]:8000"}).status_code == 200
+
+    def test_foreign_domain_host_is_rejected(self, client: Any) -> None:
+        # DNS rebinding / Host forjado: domínio não autorizado → 400.
+        resp = client.get("/api/history", headers={"host": "evil.example"})
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "host_not_allowed"
+
+    def test_env_allowlist_authorizes_domain(
+        self, monkeypatch: Any, client: Any
+    ) -> None:
+        monkeypatch.setenv("AUTODIAG_ALLOWED_HOSTS", "autodiag.oficina.com.br")
+        resp = client.get(
+            "/api/ping", headers={"host": "autodiag.oficina.com.br"}
+        )
+        assert resp.status_code == 200
+
+
+class TestCorsOptIn:
+    def test_no_cors_headers_by_default(self, client: Any) -> None:
+        # Sem AUTODIAG_CORS_ORIGINS, nenhum site externo pode ler respostas:
+        # a resposta não traz Access-Control-Allow-Origin.
+        resp = client.get(
+            "/api/history", headers={"Origin": "https://evil.example"}
+        )
+        assert resp.status_code == 200
+        assert "access-control-allow-origin" not in resp.headers
+
+    def test_preflight_delete_is_not_authorized(self, client: Any) -> None:
+        resp = client.options(
+            "/api/session/1",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "DELETE",
+            },
+        )
+        assert "access-control-allow-origin" not in resp.headers
+
+
+class TestPdfRendersInProcess:
+    def test_pdf_uses_prerendered_html_not_url(
+        self, monkeypatch: Any, client: Any, hist: Any
+    ) -> None:
+        """O PDF recebe o HTML pronto (set_content) — nunca uma URL derivada
+        do header Host, que era o vetor de SSRF."""
+        from autodiag.web import server as srv
+
+        captured: dict[str, Any] = {}
+
+        def fake_render(html: str, output_path: Any) -> Any:
+            captured["html"] = html
+            Path(output_path).write_bytes(b"%PDF-fake")
+            return output_path
+
+        monkeypatch.setattr(srv, "render_html_to_pdf", fake_render)
+        sid = hist.save(_session(vehicle_label="Carro SSRF Teste"))
+        resp = client.get(
+            f"/report/{sid}/pdf", headers={"host": "169.254.169.254"}
+        )
+        assert resp.status_code == 200
+        # Host 169.254.169.254 é IP literal (permitido como host), mas o
+        # conteúdo veio do render local — não de um GET àquele endereço.
+        assert "Carro SSRF Teste" in captured["html"]
+        assert resp.read().startswith(b"%PDF-")

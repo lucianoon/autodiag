@@ -1,29 +1,50 @@
-{
-	# AutoDiag por trás de proxy Caddy → HTTPS automatico (ACME ZeroSSL/Let's Encrypt).
-	# Troque `autodiag.oficina.com.br` pelo dominio real da oficina.
-	autodiag.oficina.com.br {
-		encode zstd gzip
-		header -Server
-		header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		header X-Content-Type-Options "nosniff"
-		header Referrer-Policy "same-origin"
-		header X-Frame-Options "SAMEORIGIN"
+# AutoDiag atrás de proxy Caddy.
+#
+# IMPORTANTE: o AutoDiag não tem sistema de login próprio. Se este proxy for
+# exposto à internet, DESCOMENTE o bloco `basic_auth` abaixo — sem ele,
+# qualquer pessoa lê o histórico de clientes e pode apagar diagnósticos.
+# Gere o hash da senha com: docker run --rm caddy:2.8-alpine caddy hash-password
+#
+# Lembre também de definir AUTODIAG_ALLOWED_HOSTS=autodiag.oficina.com.br no
+# serviço autodiag (docker-compose.yml), senão o app rejeita o Host do proxy.
 
-		reverse_proxy autodiag:8000 {
-			header_up X-Real-IP {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			transport http {
-				read_timeout 120s
-				write_timeout 120s
-			}
+# Opções globais (e-mail para avisos de expiração ACME — opcional).
+# {
+# 	email admin@oficina.com.br
+# }
+
+# HTTPS automático (ACME ZeroSSL/Let's Encrypt).
+# Troque `autodiag.oficina.com.br` pelo domínio real da oficina.
+autodiag.oficina.com.br {
+	encode zstd gzip
+	header -Server
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+	header X-Content-Type-Options "nosniff"
+	header Referrer-Policy "same-origin"
+	header X-Frame-Options "SAMEORIGIN"
+
+	# basic_auth {
+	# 	oficina $2a$14$SUBSTITUA_PELO_HASH_GERADO
+	# }
+
+	reverse_proxy autodiag:8000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
 		}
 	}
+}
 
-	# LAN: acesso direto via IP sem HTTPS (oficina pequena sem dominio).
-	:80 {
-		encode zstd gzip
-		reverse_proxy autodiag:8000 {
-			transport http { read_timeout 120s; write_timeout 120s }
+# LAN: acesso direto via IP sem HTTPS (oficina pequena sem domínio).
+# Não exponha esta porta à internet.
+:80 {
+	encode zstd gzip
+	reverse_proxy autodiag:8000 {
+		transport http {
+			read_timeout 120s
+			write_timeout 120s
 		}
 	}
 }

@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import io
+import ipaddress
 import json
 import os
 import tempfile
@@ -36,7 +37,7 @@ from autodiag.core.ev_support import (
     detectar_propulsao_por_vin,
     hv_fields_for_brand,
 )
-from autodiag.core.pdf import render_url_to_pdf
+from autodiag.core.pdf import render_html_to_pdf
 from autodiag.core.readiness import build_readiness_summary
 from autodiag.core.report import build_report, render_report_html
 from autodiag.core.trend import build_vehicle_trends
@@ -48,19 +49,78 @@ from autodiag.elm327.reader import DTCRecord, list_ports
 
 STARTUP_TS = time.time()
 app = FastAPI(title="AutoDiag")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    max_age=3600,
-    expose_headers=["X-Request-Id", "Content-Disposition"],
-)
+
+
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("AUTODIAG_CORS_ORIGINS", "")
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+# CORS é opt-in: a SPA é servida pela própria API (same-origin) e não precisa
+# de CORS. `allow_origins=["*"]` permitia que qualquer site aberto no
+# navegador lesse o histórico (VINs, placas, notas de cliente) e disparasse
+# DELETEs sem credencial. Para integrar um front externo, defina
+# AUTODIAG_CORS_ORIGINS="https://app.exemplo.com,https://outro.com".
+if _cors_origins():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
+        max_age=3600,
+        expose_headers=["X-Request-Id", "Content-Disposition"],
+    )
+
+
+def _host_from_header(value: str) -> str:
+    v = (value or "").strip().lower()
+    if v.startswith("["):  # IPv6 literal: [::1]:8000
+        return v[1 : v.find("]")] if "]" in v else ""
+    return v.split(":")[0]
+
+
+def _host_allowed(host: str) -> bool:
+    h = host.rstrip(".")
+    if not h:
+        return False
+    # "testserver" é o Host padrão do TestClient do FastAPI/Starlette.
+    if h in ("localhost", "testserver") or h.endswith((".localhost", ".local")):
+        return True
+    try:
+        ipaddress.ip_address(h)
+        return True  # IP literal (acesso via LAN/celular)
+    except ValueError:
+        pass
+    extra = os.environ.get("AUTODIAG_ALLOWED_HOSTS", "")
+    return h in {e.strip().lower() for e in extra.split(",") if e.strip()}
+
+
+@app.middleware("http")
+async def _trusted_host_guard(request: Request, call_next):
+    # Bloqueia DNS rebinding e Host forjado: só atende requisições cujo Host
+    # é local, um IP literal ou um domínio autorizado via
+    # AUTODIAG_ALLOWED_HOSTS (necessário atrás de proxy com domínio próprio).
+    host = _host_from_header(request.headers.get("host", ""))
+    if not _host_allowed(host):
+        return JSONResponse(
+            {
+                "error": "host_not_allowed",
+                "detail": (
+                    "Host não autorizado. Para servir sob um domínio, defina "
+                    "AUTODIAG_ALLOWED_HOSTS=seu.dominio.com"
+                ),
+            },
+            status_code=400,
+        )
+    return await call_next(request)
 
 _STATIC = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 
 _DEFAULT_BODY_FACTORY = Body(default_factory=dict)
+
+# Um Chromium por vez na geração de PDF (ver report_pdf).
+_PDF_SEMAPHORE = asyncio.Semaphore(1)
 
 
 def _dtc_payload(dtcs: list[DTCRecord]) -> list[dict]:
@@ -399,8 +459,10 @@ async def report_download(sid: int, request: Request):
 async def report_pdf(sid: int, request: Request):
     with History() as history:
         row = history.get(sid)
-    if not row:
-        return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
+        if not row:
+            return HTMLResponse(f"Sessão {sid} não encontrada", status_code=404)
+        prev = history.previous_for_vin(row.get("vin") or "", before_id=sid)
+        vhist = history.list_by_vin(row.get("vin") or "", limit=8)
     vin_token = (
         (row.get("vin") or "").strip()[-6:]
         if (row.get("vin") or "").strip()
@@ -408,14 +470,22 @@ async def report_pdf(sid: int, request: Request):
     )
     ts_token = datetime.now().strftime("%Y%m%d-%H%M")
     filename = f"autodiag-report-{vin_token}-{ts_token}.pdf"
-    report_url = str(request.url_for("report", sid=sid))
+    # O HTML é renderizado aqui e injetado via set_content: o Chromium nunca
+    # busca uma URL derivada do header Host (SSRF), nem depende do server
+    # estar acessível de dentro do sandbox do browser.
+    url = str(request.url_for("report_download", sid=sid))
+    rep = build_report(row, prev, vehicle_history=vhist, download_url=url)
+    report_html = render_report_html(rep)
     pdf_path: Path | None = None
     try:
         fd, tmp_path = tempfile.mkstemp(suffix=".pdf", prefix="autodiag-pdf-")
         os.close(fd)
         pdf_path = Path(tmp_path)
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, render_url_to_pdf, report_url, pdf_path)
+        # Cada render sobe um Chromium (~200 MB); o semáforo impede que uma
+        # rajada de requests vire DoS de memória.
+        async with _PDF_SEMAPHORE:
+            await loop.run_in_executor(None, render_html_to_pdf, report_html, pdf_path)
     except RuntimeError as e:
         if pdf_path is not None and pdf_path.exists():
             try:

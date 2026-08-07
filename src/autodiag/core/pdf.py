@@ -13,16 +13,18 @@ def _playwright_sync_api_available() -> bool:
         return False
 
 
-def render_url_to_pdf(url: str, output_path: Path) -> Path:
-    """Renderiza um URL HTML num arquivo PDF via Playwright Chromium headless.
+def render_html_to_pdf(html: str, output_path: Path) -> Path:
+    """Renderiza HTML (string) num arquivo PDF via Playwright Chromium headless.
+
+    O conteúdo é injetado com ``page.set_content()`` — o Chromium nunca faz
+    GET a uma URL derivada da requisição, o que elimina SSRF via header Host.
 
     Requer que a opcional `playwright` esteja instalada
     e o binário do Chromium tenha sido baixado com
     `playwright install chromium`. Levanta RuntimeError caso contrário.
 
     Parâmetros:
-        url: URL HTTP que o Chromium vai carregar (ex.:
-            `http://127.0.0.1:8000/report/42`).
+        html: documento HTML completo já renderizado.
         output_path: Path destino do PDF; se o diretório pai não existir
             ele é criado automaticamente.
 
@@ -57,7 +59,7 @@ def render_url_to_pdf(url: str, output_path: Path) -> Path:
                     locale="pt-BR",
                 )
                 page = ctx.new_page()
-                page.goto(url, wait_until="networkidle", timeout=20000)
+                page.set_content(html, wait_until="load")
                 pdf_bytes = page.pdf(
                     format="A4",
                     print_background=True,

@@ -1,8 +1,17 @@
+# ATENÇÃO: o AutoDiag não tem login próprio. O serviço `caddy` publica
+# 80/443; se a máquina for alcançável da internet, habilite o basic_auth no
+# deploy/Caddyfile antes de subir — sem isso, qualquer pessoa lê o histórico
+# de clientes e pode apagar diagnósticos.
 services:
   autodiag:
     build: .
     image: autodiag:local
     restart: unless-stopped
+    # Atrás do Caddy é seguro confiar nos headers X-Forwarded-* (rede
+    # interna do compose). A imagem em si não confia em proxy por padrão.
+    command:
+      ["--host", "0.0.0.0", "--port", "8000", "--proxy-headers",
+       "--forwarded-allow-ips", "*"]
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -12,6 +21,8 @@ services:
       - AUTODIAG_DB_PATH=/data/history.db
       - HOST=0.0.0.0
       - PORT=8000
+      # Ao servir sob domínio próprio via Caddy, autorize o Host aqui:
+      # - AUTODIAG_ALLOWED_HOSTS=autodiag.oficina.com.br
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys;r=urllib.request.urlopen('http://127.0.0.1:8000/api/ping');sys.exit(0 if r.status==200 and r.read().count(b'pong') else 2)"]
       interval: 30s
