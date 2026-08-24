@@ -4,6 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/autodiag)](https://pypi.org/project/autodiag/)
 [![CI](https://github.com/lucianoon/autodiag/actions/workflows/ci.yml/badge.svg)](https://github.com/lucianoon/autodiag/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 An OBD2 diagnostics tool in Python for 2015+ vehicles, using **ELM327** adapters
