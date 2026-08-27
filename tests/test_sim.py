@@ -72,6 +72,43 @@ class TestDemoClearedPersistence:
         assert len(status.incomplete_monitors) >= 2
         assert second.get_distance_since_clear() == 7
 
+    def test_cleared_state_survives_a_write_and_read_in_the_same_clock_tick(
+        self, tmp_path, monkeypatch
+    ):
+        """Regressão de flake: no Windows o time.time() tem resolução de ~15,6 ms, então
+        gravar o marcador e relê-lo em seguida cai no mesmo tick e a diferença é
+        exatamente 0.0. Com um limite inferior estrito (`0 < delta`), a limpeza que
+        acabou de acontecer era descartada. Congelar o relógio fixa o caso sem depender
+        da resolução da plataforma."""
+        import autodiag.elm327.sim as sim_mod
+        from autodiag.elm327 import create_reader
+
+        monkeypatch.setenv("AUTODIAG_HOME", str(tmp_path))
+        monkeypatch.setattr(sim_mod.time, "time", lambda: 1_000_000.0)
+
+        first = create_reader(demo=True)
+        assert first.get_dtcs()
+        first.clear_dtcs()
+
+        # Mesmo instante exato da gravação: delta == 0.0.
+        assert create_reader(demo=True).get_dtcs() == []
+
+    def test_cleared_marker_in_the_future_is_ignored(self, tmp_path, monkeypatch):
+        """O limite inferior continua rejeitando carimbo no futuro (relógio ajustado
+        para trás), que é o que ele existe para barrar."""
+        import json as _json
+
+        import autodiag.elm327.sim as sim_mod
+        from autodiag.elm327 import create_reader
+
+        monkeypatch.setenv("AUTODIAG_HOME", str(tmp_path))
+        (tmp_path / "demo_state.json").write_text(
+            _json.dumps({"cleared_at": 2_000_000.0}), encoding="utf-8"
+        )
+        monkeypatch.setattr(sim_mod.time, "time", lambda: 1_000_000.0)
+
+        assert len(create_reader(demo=True).get_dtcs()) == 2
+
     def test_expired_marker_returns_to_default_scenario(self, tmp_path, monkeypatch):
         import json as _json
         import time as _time

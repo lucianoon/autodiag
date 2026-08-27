@@ -91,7 +91,12 @@ class SimulatedELM327:
         try:
             data = json.loads(_demo_state_path().read_text(encoding="utf-8"))
             cleared_at = float(data.get("cleared_at") or 0)
-            return 0 < time.time() - cleared_at < _DEMO_CLEARED_TTL_S
+            # `>= 0`, não `> 0`: no Windows o time.time() tem resolução de ~15,6 ms, então
+            # a gravação do marcador e esta leitura caem no mesmo tick e a diferença é
+            # exatamente 0.0 — o que descartava a limpeza que acabou de acontecer. O limite
+            # inferior existe para rejeitar carimbo no futuro (relógio ajustado para trás),
+            # e continua fazendo isso, porque aí a diferença é negativa.
+            return 0 <= time.time() - cleared_at < _DEMO_CLEARED_TTL_S
         except Exception:
             return False
 
