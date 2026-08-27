@@ -36,6 +36,16 @@ external access is required.
 > `critico` / `atencao` / `informativo`. The CLI and the web UI render those
 > values as-is.
 
+## Quick evidence
+
+| Evidence | What it demonstrates |
+|---|---|
+| Published on [PyPI](https://pypi.org/project/autodiag/) | Real packaging and distribution |
+| 281 test functions | DTCs, PIDs, VIN, readiness, history, providers and the web interface |
+| `ruff` + `mypy` + pytest in CI | Automated quality on every change |
+| `autodiag scan --demo` | Full reproducible flow with no hardware |
+| CLI + FastAPI + SSE + SQLite | A vertical product, not just an LLM call |
+
 ## What it does today
 
 - **DTC reading** (mode 03) over ELM327, decoding P/C/B/U codes and looking
@@ -231,6 +241,27 @@ every push and pull request.
 
 The OIDC-based versioning and publishing process is documented in
 [`RELEASING.md`](RELEASING.md).
+
+## Limitations and safety
+
+- The diagnosis is informational and does not replace inspection by a qualified
+  professional; clearing DTCs requires explicit confirmation.
+- The local database covers common codes. Manufacturer-specific codes may
+  require official documentation or a proprietary scanner.
+- Demo mode validates the software, but it does not replace testing with
+  different ELM327 adapters and real vehicles.
+- LLM analysis is optional and must never be the sole basis for a safety
+  decision.
+
+## Community and contributing
+
+- **Tried it on a real car?** [Open a compatibility report](https://github.com/lucianoon/autodiag/issues/new?template=compatibilidade.yml)
+  — working or not, it takes 2 minutes and feeds the
+  [compatibility matrix](docs/compatibilidade.md). It is the most valuable
+  contribution to the project.
+- **Want to contribute code?** See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+  [`good first issue`](https://github.com/lucianoon/autodiag/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) issues.
+- **Questions and ideas:** [Discussions](https://github.com/lucianoon/autodiag/discussions).
 
 ## License
 
