@@ -3,6 +3,7 @@ import csv
 import io
 import ipaddress
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -48,6 +49,7 @@ from autodiag.db.history import History, Session
 from autodiag.elm327 import OBDReader, create_reader
 from autodiag.elm327.reader import DTCRecord, list_ports
 
+logger = logging.getLogger(__name__)
 STARTUP_TS = time.time()
 app = FastAPI(title="AutoDiag")
 
@@ -517,8 +519,18 @@ async def report_pdf(sid: int, request: Request):
                 pdf_path.unlink()
             except Exception:
                 pass
+        # A mensagem da exceção pode carregar detalhes internos (caminhos,
+        # tracebacks do Chromium): vai para o log, não para o cliente.
+        logger.warning("PDF indisponível: %s", e)
         return JSONResponse(
-            {"error": "playwright_required", "detail": str(e)}, status_code=503
+            {
+                "error": "playwright_required",
+                "detail": (
+                    'Exportação de PDF requer o extra "autodiag[pdf]" e '
+                    "`playwright install chromium` no servidor."
+                ),
+            },
+            status_code=503,
         )
     except Exception as e:
         if pdf_path is not None and pdf_path.exists():
@@ -526,9 +538,8 @@ async def report_pdf(sid: int, request: Request):
                 pdf_path.unlink()
             except Exception:
                 pass
-        raise HTTPException(
-            status_code=500, detail=f"Falha ao gerar PDF: {e}"
-        ) from e
+        logger.exception("Falha ao gerar PDF da sessão %s", sid)
+        raise HTTPException(status_code=500, detail="Falha ao gerar PDF") from e
 
     def iter_cleanup() -> Any:
         fh = open(pdf_path, "rb")
